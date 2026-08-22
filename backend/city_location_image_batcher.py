@@ -29,15 +29,35 @@ regenerated at $0.04/image and the backlog never converges.
 from __future__ import annotations
 
 import asyncio
-import base64
 import logging
 import os
 from datetime import datetime, timezone
-from typing import Dict, List, Optional
+from typing import Awaitable, Callable, Dict, List, Optional
 
 from emergentintegrations.llm.openai.image_generation import OpenAIImageGeneration
+from pymongo.errors import PyMongoError
+
+from image_service import ImageService
 
 logger = logging.getLogger(__name__)
+
+
+async def _retry_db(coro_factory: Callable[[], Awaitable], *, attempts: int = 3,
+                    base_delay: float = 0.5, what: str = "db op"):
+    """Run a Mongo op with retries on transient PyMongo errors (network / read
+    timeouts, auto-reconnect). Prevents a single blip from crashing an entire
+    auto-continue batch run. `coro_factory` MUST return a fresh coroutine each
+    call — a coroutine/cursor cannot be awaited twice."""
+    last_exc: Optional[Exception] = None
+    for i in range(attempts):
+        try:
+            return await coro_factory()
+        except PyMongoError as e:
+            last_exc = e
+            logger.warning(f"{what} failed (attempt {i + 1}/{attempts}): {e}")
+            if i < attempts - 1:
+                await asyncio.sleep(base_delay * (2 ** i))
+    raise last_exc
 
 # Safety cap for run-until-done mode. 60 iterations × 25 batch = 1500 max
 # items per kick-off.
@@ -192,8 +212,19 @@ class CityLocationImageBatcher:
         if not api_key:
             raise RuntimeError("EMERGENT_LLM_KEY missing from environment.")
         self.image_gen = OpenAIImageGeneration(api_key=api_key)
+        self.img_service = ImageService(db)
 
-    async def _generate_one(self, prompt: str) -> Optional[str]:
+    async def _generate_image_id(self, prompt: str) -> Optional[str]:
+        """Generate one image and persist it to the `image_blobs` collection.
+        Returns the new `image_id` (a short UUID) or None on failure.
+
+        IMPORTANT: the image is stored in image_blobs and referenced by
+        image_id — we do NOT embed the base64 blob in the parent
+        city/location document. Embedding bloated every doc to megabytes,
+        which made the "missing images" survey COLLSCAN slow enough to hit
+        MongoDB's socket read timeout and crash the whole run after only a
+        handful of images.
+        """
         try:
             images = await self.image_gen.generate_images(
                 prompt=prompt,
@@ -205,12 +236,21 @@ class CityLocationImageBatcher:
             return None
         if not images:
             return None
-        b64 = base64.b64encode(images[0]).decode("utf-8")
-        return f"data:image/png;base64,{b64}"
+        try:
+            return await self.img_service.store_bytes(images[0], mime_type="image/png")
+        except PyMongoError as e:
+            logger.warning(f"Image blob store failed: {e}")
+            return None
 
     async def survey(self) -> Dict:
-        cities_missing = await self.db.cities.count_documents(MISSING_QUERY)
-        locations_missing = await self.db.locations.count_documents(MISSING_QUERY)
+        cities_missing = await _retry_db(
+            lambda: self.db.cities.count_documents(MISSING_QUERY),
+            what="cities survey count",
+        )
+        locations_missing = await _retry_db(
+            lambda: self.db.locations.count_documents(MISSING_QUERY),
+            what="locations survey count",
+        )
         return {
             "cities_missing": cities_missing,
             "locations_missing": locations_missing,
@@ -223,32 +263,41 @@ class CityLocationImageBatcher:
         generated = 0
         failed = 0
 
-        cities_to_do = await self.db.cities.find(
-            MISSING_QUERY,
-            {"_id": 0, "id": 1, "slug": 1, "name": 1, "nation": 1, "region": 1,
-             "description": 1, "lore": 1, "is_capital": 1, "is_ruined": 1,
-             "is_contested": 1, "hold": 1},
-        ).limit(self.batch_size).to_list(length=self.batch_size)
+        cities_to_do = await _retry_db(
+            lambda: self.db.cities.find(
+                MISSING_QUERY,
+                {"_id": 0, "id": 1, "slug": 1, "name": 1, "nation": 1, "region": 1,
+                 "description": 1, "lore": 1, "is_capital": 1, "is_ruined": 1,
+                 "is_contested": 1, "hold": 1},
+            ).limit(self.batch_size).to_list(length=self.batch_size),
+            what="cities batch find",
+        )
 
         remaining_slots = self.batch_size - len(cities_to_do)
         locations_to_do: List[Dict] = []
         if remaining_slots > 0:
-            locations_to_do = await self.db.locations.find(
-                MISSING_QUERY,
-                {"_id": 0, "id": 1, "slug": 1, "name": 1, "nation": 1, "city": 1,
-                 "location_type": 1, "description": 1, "lore": 1, "is_sacred": 1,
-                 "tongue_of_yros": 1},
-            ).limit(remaining_slots).to_list(length=remaining_slots)
+            locations_to_do = await _retry_db(
+                lambda: self.db.locations.find(
+                    MISSING_QUERY,
+                    {"_id": 0, "id": 1, "slug": 1, "name": 1, "nation": 1, "city": 1,
+                     "location_type": 1, "description": 1, "lore": 1, "is_sacred": 1,
+                     "tongue_of_yros": 1},
+                ).limit(remaining_slots).to_list(length=remaining_slots),
+                what="locations batch find",
+            )
 
         for c in cities_to_do:
             if _JOB_STATE.should_stop:
                 break
             prompt = _build_city_prompt(c)
-            img = await self._generate_one(prompt)
-            if img:
-                await self.db.cities.update_one(
-                    {"id": c["id"]},
-                    {"$set": {"image_url": img}},
+            img_id = await self._generate_image_id(prompt)
+            if img_id:
+                await _retry_db(
+                    lambda cid=c["id"], iid=img_id: self.db.cities.update_one(
+                        {"id": cid},
+                        {"$set": {"image_id": iid}, "$unset": {"image_url": ""}},
+                    ),
+                    what="city image write",
                 )
                 generated += 1
                 _JOB_STATE.generated += 1
@@ -264,11 +313,14 @@ class CityLocationImageBatcher:
             if _JOB_STATE.should_stop:
                 break
             prompt = _build_location_prompt(loc)
-            img = await self._generate_one(prompt)
-            if img:
-                await self.db.locations.update_one(
-                    {"id": loc["id"]},
-                    {"$set": {"image_url": img}},
+            img_id = await self._generate_image_id(prompt)
+            if img_id:
+                await _retry_db(
+                    lambda lid=loc["id"], iid=img_id: self.db.locations.update_one(
+                        {"id": lid},
+                        {"$set": {"image_id": iid}, "$unset": {"image_url": ""}},
+                    ),
+                    what="location image write",
                 )
                 generated += 1
                 _JOB_STATE.generated += 1

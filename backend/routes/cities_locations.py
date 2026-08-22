@@ -98,10 +98,13 @@ def attach_cities_locations_routes(
         if not include_inactive:
             query["is_active"] = True
 
-        cities = await db.cities.find(query, {"_id": 0}).sort("name", 1).to_list(1000)
+        cities = await db.cities.find(query, {"_id": 0, "image_url": 0}).sort("name", 1).to_list(1000)
         for city in cities:
             if isinstance(city.get("created_at"), str):
                 city["created_at"] = datetime.fromisoformat(city["created_at"])
+            # Return a tiny `/api/image/{id}` ref, never the heavy base64 blob.
+            iid = city.pop("image_id", None)
+            city["image_url"] = _make_image_url(iid)
         return [City(**c) for c in cities]
 
     @api_router.get("/cities/{nation}", response_model=List[CityListItem])
@@ -164,11 +167,20 @@ def attach_cities_locations_routes(
     @api_router.get("/cities/{nation}/{city_slug}", response_model=City)
     async def get_city(nation: str, city_slug: str):
         """Get a specific city by nation and slug."""
-        city_doc = await db.cities.find_one({"nation": nation, "slug": city_slug}, {"_id": 0})
+        # Exclude the heavy base64 image_url; return a small `/api/image/{id}`
+        # ref instead (migrating any legacy blob on first access).
+        city_doc = await db.cities.find_one(
+            {"nation": nation, "slug": city_slug}, {"_id": 0, "image_url": 0}
+        )
         if not city_doc:
             raise HTTPException(status_code=404, detail="City not found")
         if isinstance(city_doc.get("created_at"), str):
             city_doc["created_at"] = datetime.fromisoformat(city_doc["created_at"])
+        image_id = city_doc.pop("image_id", None)
+        if not image_id:
+            img_service = ImageService(db)
+            image_id = await img_service.ensure_migrated("cities", {"nation": nation, "slug": city_slug})
+        city_doc["image_url"] = _make_image_url(image_id)
         return City(**city_doc)
 
     @api_router.post("/admin/cities", response_model=City)

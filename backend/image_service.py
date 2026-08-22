@@ -121,3 +121,49 @@ class ImageService:
             {"$set": {"image_id": new_id}, "$unset": {"image_url": ""}},
         )
         return new_id
+
+    # ---------- Bulk migration (admin "Shrink image storage") ----------
+
+    # Only target docs whose image_url is an actual embedded data: blob.
+    # Non-data URLs (already small refs) are left untouched.
+    _EMBEDDED_QUERY = {"image_url": {"$regex": "^data:image"}}
+
+    async def count_embedded(self, collection_name: str) -> int:
+        """Count docs in `collection_name` still holding an embedded base64 blob."""
+        return await self.db[collection_name].count_documents(self._EMBEDDED_QUERY)
+
+    async def migrate_embedded_batch(self, collection_name: str, limit: int = 100) -> dict:
+        """Move up to `limit` embedded base64 `image_url` blobs in
+        `collection_name` into image_blobs (sets image_id, unsets image_url).
+
+        Idempotent + resumable — call repeatedly until `remaining` == 0. Bounded
+        per call so a huge collection can be migrated without one giant request.
+        """
+        coll = self.db[collection_name]
+        docs = await coll.find(
+            self._EMBEDDED_QUERY, {"image_url": 1}
+        ).limit(limit).to_list(length=limit)
+
+        migrated = 0
+        failed = 0
+        for d in docs:
+            new_id = await self.store_from_data_url(d.get("image_url"))
+            if not new_id:
+                # Unparseable legacy blob — drop it so it can't wedge the loop.
+                await coll.update_one({"_id": d["_id"]}, {"$unset": {"image_url": ""}})
+                failed += 1
+                continue
+            await coll.update_one(
+                {"_id": d["_id"]},
+                {"$set": {"image_id": new_id}, "$unset": {"image_url": ""}},
+            )
+            migrated += 1
+
+        remaining = await coll.count_documents(self._EMBEDDED_QUERY)
+        return {
+            "collection": collection_name,
+            "migrated": migrated,
+            "failed": failed,
+            "remaining": remaining,
+            "done": remaining == 0,
+        }

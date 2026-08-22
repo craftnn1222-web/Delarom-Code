@@ -31,7 +31,18 @@ load_dotenv(ROOT_DIR / '.env')
 
 # MongoDB connection
 mongo_url = os.environ['MONGO_URL']
-client = AsyncIOMotorClient(mongo_url)
+# Explicit timeouts + retryable reads/writes. socketTimeoutMS is generous so a
+# slow COLLSCAN can't wedge; retryReads/Writes recover from transient Atlas
+# blips instead of crashing long-running background jobs (image batcher).
+client = AsyncIOMotorClient(
+    mongo_url,
+    serverSelectionTimeoutMS=30000,
+    connectTimeoutMS=30000,
+    socketTimeoutMS=120000,
+    retryReads=True,
+    retryWrites=True,
+    maxPoolSize=50,
+)
 db = client[os.environ['DB_NAME']]
 
 # JWT Configuration

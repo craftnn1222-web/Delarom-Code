@@ -1,0 +1,34 @@
+{
+  "summary": "Iteration 31 — Validated the image-storage refactor end-to-end (backend + web). All 9 pytest cases pass: admin auth-gated survey/status/shrink, shrink is idempotent and returns the documented shape, GET /api/cities/aigraels/vargath is < 5KB with an /api/image/<id> ref (no data: base64), GET /api/cities?nation=aigraels leaks no data: URLs, and /api/image/<id> serves image/png bytes. Web Admin Dashboard → Database tab renders both the existing repair-world-btn and the new shrink-image-btn; clicking Shrink triggers the success toast and populates the shrink-image-result panel ('all clear ✓', 0 remaining across locations/cities/nations, consistent with the recent DB reset).",
+  "platforms_tested": ["web"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_image_shrink_and_cities.py",
+    "/app/test_reports/pytest/iter31_image_shrink.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes/admin.py `shrink_image_storage` correctly stops at the first non-empty collection each call — the frontend loops until done, so this is fine, but a comment would help future maintainers.",
+    "cities_locations.py `get_city` and `list_cities` both pop `image_id` and rebuild `image_url` as `/api/image/<id>` — good. Legacy `image_url` base64 is stripped from projection so payloads stay tiny. Verified 3KB response for vargath.",
+    "image_service.py `migrate_embedded_batch` correctly $unsets image_url even on failed decode so a bad blob cannot wedge the loop — nice."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_image_shrink_and_cities.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin: craftnn1222@gmail.com / admin123",
+  "seed_data_creation": "None — used existing 3 city images (vargath, ironhold, noctyss-vale) as noted in the request. DB currently has 0 embedded base64 blobs across all collections (survey: 160 cities missing, 1704 locations missing = expected after the disk-full recovery).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Image storage refactor is verified. /api/cities returns image_url as either null or '/api/image/<id>'; never data:. The shrink endpoint is idempotent and safe to invoke repeatedly. Admin UI button lives in DatabaseSeedPanel with testids repair-world-btn + shrink-image-btn + shrink-image-result. DID NOT call /api/admin/image-batch/generate per instruction (cost).",
+  "rca of the issue": "N/A — fix already implemented and verified. Root cause was megabyte-sized base64 in city/location docs → COLLSCAN timeout on the missing-image survey + Cloudflare 502 on GET /cities. Fix path: image_blobs collection + image_id refs + shrink endpoint + hardened list/detail endpoints. All confirmed working."
+}

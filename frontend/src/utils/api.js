@@ -302,6 +302,8 @@ export const adminSeedAllRealmsCanon = () =>
   api.post('/admin/seed-all-realms-canon');
 export const adminRepairWorldLocations = () =>
   api.post('/admin/repair-world-locations');
+export const adminShrinkImageStorage = (limit = 100) =>
+  api.post(`/admin/shrink-image-storage?limit=${limit}`);
 
 // Visibility — fetch faction info for a single character or a batch
 export const getCharacterFaction = (characterId) =>

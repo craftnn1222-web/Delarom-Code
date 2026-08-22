@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
-import { Database, AlertCircle, Loader2, CheckCircle2, XCircle, Shield, Hammer, Crown, Sparkles, Trash2, Image as ImageIcon, Wrench } from 'lucide-react';
+import { Database, AlertCircle, Loader2, CheckCircle2, XCircle, Shield, Hammer, Crown, Sparkles, Trash2, Image as ImageIcon, Wrench, Archive } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Progress } from '../ui/progress';
 import { Switch } from '../ui/switch';
-import { adminSeedStarterFactions, adminSeedMasterNpcs, adminSeedRoyalsAndNobles, adminPopulateCitiesAi, adminCleanupGeoData, adminImageBatchSurvey, adminImageBatchStatus, adminImageBatchGenerate, adminImageBatchStop, adminSeedTitanSacredSites, adminSeedDhorKuldorCanon, adminSeedAllRealmsCanon, adminRepairWorldLocations } from '../../utils/api';
+import { adminSeedStarterFactions, adminSeedMasterNpcs, adminSeedRoyalsAndNobles, adminPopulateCitiesAi, adminCleanupGeoData, adminImageBatchSurvey, adminImageBatchStatus, adminImageBatchGenerate, adminImageBatchStop, adminSeedTitanSacredSites, adminSeedDhorKuldorCanon, adminSeedAllRealmsCanon, adminRepairWorldLocations, adminShrinkImageStorage } from '../../utils/api';
 
 /**
  * Database Seed Panel (admin-only) — current world data counts +
@@ -34,6 +34,36 @@ const DatabaseSeedPanel = ({ dbStatus, seedStatus, seeding, withImages, onToggle
   const [realmsResult, setRealmsResult] = useState(null);
   const [repairBusy, setRepairBusy] = useState(false);
   const [repairResult, setRepairResult] = useState(null);
+  const [shrinkBusy, setShrinkBusy] = useState(false);
+  const [shrinkResult, setShrinkResult] = useState(null);
+
+  const handleShrinkImages = async () => {
+    if (shrinkBusy) return;
+    setShrinkBusy(true);
+    setShrinkResult(null);
+    try {
+      let done = false;
+      let sessionMigrated = 0;
+      let guard = 0;
+      while (!done && guard < 500) {
+        guard += 1;
+        const r = await adminShrinkImageStorage(100);
+        const data = r.data;
+        sessionMigrated += data.migrated_this_call || 0;
+        setShrinkResult({ ...data, session_migrated: sessionMigrated });
+        done = data.done;
+        // Safety: if a call made no progress and isn't done, stop looping.
+        if (!done && (data.migrated_this_call || 0) === 0 && (data.failed_this_call || 0) === 0) {
+          break;
+        }
+      }
+      toast.success(`Image storage shrunk — ${sessionMigrated} image(s) moved to blob storage.`);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Shrink image storage failed.');
+    } finally {
+      setShrinkBusy(false);
+    }
+  };
 
   const handleRepairWorld = async () => {
     if (repairBusy) return;
@@ -730,6 +760,47 @@ const DatabaseSeedPanel = ({ dbStatus, seedStatus, seeding, withImages, onToggle
           {imgStatus.last_error && (
             <p className="text-red-300/80 text-xs italic">Last error: {imgStatus.last_error}</p>
           )}
+        </div>
+      )}
+    </div>
+
+    {/* Shrink Image Storage — migrate embedded base64 blobs out of parent docs */}
+    <div className="bg-sky-950/30 border border-sky-600/40 rounded-lg p-6 mt-6" data-testid="shrink-image-panel">
+      <div className="flex items-center gap-3 mb-3">
+        <Archive className="w-6 h-6 text-sky-300" />
+        <h3 className="text-lg font-bold text-sky-200">Shrink Image Storage (Fix Timeouts)</h3>
+      </div>
+      <p className="text-gray-400 mb-4">
+        Moves oversized embedded image data out of city / location documents and
+        into dedicated blob storage. This keeps documents tiny so the image
+        generator no longer times out mid-run, and prevents huge API responses.
+        Idempotent &amp; safe to run repeatedly — it runs in small batches until done.
+      </p>
+      <Button
+        onClick={handleShrinkImages}
+        disabled={shrinkBusy}
+        className="bg-gradient-to-r from-sky-700 to-cyan-700 hover:from-sky-800 hover:to-cyan-800"
+        data-testid="shrink-image-btn"
+      >
+        {shrinkBusy ? (
+          <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Shrinking image storage…</>
+        ) : (
+          <><Archive className="w-5 h-5 mr-2" />Shrink Image Storage</>
+        )}
+      </Button>
+      {shrinkResult && (
+        <div className="mt-4 bg-black/40 border border-sky-500/30 rounded-md p-4 text-sm space-y-1" data-testid="shrink-image-result">
+          <p className="text-sky-200">
+            <CheckCircle2 className="w-4 h-4 inline mr-1" />
+            <strong>{shrinkResult.session_migrated || 0}</strong> image(s) moved to blob storage this session
+          </p>
+          <p className="text-sky-200/70 text-xs">
+            Remaining embedded: {shrinkResult.total_remaining}
+            {shrinkResult.remaining_by_collection && (
+              <> · locations {shrinkResult.remaining_by_collection.locations} · cities {shrinkResult.remaining_by_collection.cities} · nations {shrinkResult.remaining_by_collection.nations}</>
+            )}
+            {shrinkResult.done && <span className="text-emerald-300"> · all clear ✓</span>}
+          </p>
         </div>
       )}
     </div>

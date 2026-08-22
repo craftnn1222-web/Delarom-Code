@@ -265,6 +265,38 @@ def attach_admin_routes(
         from repair_world_data import repair_world_data
         return await repair_world_data(db)
 
+    @api_router.post("/admin/shrink-image-storage")
+    async def shrink_image_storage(limit: int = 100, admin: User = Depends(require_admin)):
+        """Move embedded base64 `image_url` blobs on cities / locations / nations
+        into the `image_blobs` collection (sets image_id, unsets image_url).
+
+        Keeping megabyte-sized base64 in parent docs bloats list endpoints (which
+        can overwhelm the CDN → 'origin could not parse response') and slows the
+        image-batch survey COLLSCAN until it hits a Mongo read timeout. This
+        permanently shrinks the collections. Bounded per call & resumable —
+        returns progress; the caller loops until `done` is true.
+        """
+        from image_service import ImageService
+        svc = ImageService(db)
+        worked = None
+        for coll in ("locations", "cities", "nations"):
+            r = await svc.migrate_embedded_batch(coll, limit=limit)
+            if r["migrated"] > 0 or r["failed"] > 0:
+                worked = r
+                break
+        remaining_by = {}
+        for coll in ("locations", "cities", "nations"):
+            remaining_by[coll] = await svc.count_embedded(coll)
+        total_remaining = sum(remaining_by.values())
+        return {
+            "worked_on": worked["collection"] if worked else None,
+            "migrated_this_call": (worked["migrated"] if worked else 0),
+            "failed_this_call": (worked["failed"] if worked else 0),
+            "remaining_by_collection": remaining_by,
+            "total_remaining": total_remaining,
+            "done": total_remaining == 0,
+        }
+
 
     class AdminPasswordResetRequest(BaseModel):
         new_password: str = Field(min_length=6, description="New password (min 6 characters)")
