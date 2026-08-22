@@ -60,6 +60,26 @@ export default function TabsLayout() {
           ),
         }}
       />
+      <Tabs.Screen
+        name="quests"
+        options={{
+          title: "Quests",
+          tabBarButtonTestID: NAV.questsTab,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="ribbon" size={size} color={color} />
+          ),
+        }}
+      />
+      <Tabs.Screen
+        name="realm"
+        options={{
+          title: "Realm",
+          tabBarButtonTestID: NAV.realmTab,
+          tabBarIcon: ({ color, size }) => (
+            <Ionicons name="compass" size={size} color={color} />
+          ),
+        }}
+      />
     </Tabs>
   );
 }

@@ -5,6 +5,8 @@ export const NAV = {
   dashboardTab: "nav-dashboard-tab",
   charactersTab: "nav-characters-tab",
   worldTab: "nav-world-tab",
+  questsTab: "nav-quests-tab",
+  realmTab: "nav-realm-tab",
 };
 
 export const DASHBOARD = {
@@ -49,4 +51,54 @@ export const RP = {
   input: "rp-action-input",
   sendButton: "rp-send-button",
   logEntry: "rp-log-entry",
+};
+
+export const QUESTS = {
+  screen: "quests-screen",
+  boardToggle: "quests-board-toggle",
+  mineToggle: "quests-mine-toggle",
+  card: "quest-card",
+  detailScreen: "quest-detail-screen",
+  acceptButton: "quest-accept-button",
+};
+
+export const MARKET = {
+  screen: "marketplace-screen",
+  shopCard: "shop-card",
+  shopScreen: "shop-detail-screen",
+  itemCard: "shop-item-card",
+  buyButton: "item-buy-button",
+};
+
+export const FACTIONS = {
+  screen: "factions-screen",
+  card: "faction-card",
+  detailScreen: "faction-detail-screen",
+  joinButton: "faction-join-button",
+  leaveButton: "faction-leave-button",
+};
+
+export const PARTIES = {
+  screen: "parties-screen",
+  newButton: "parties-new-button",
+  card: "party-card",
+  detailScreen: "party-detail-screen",
+  createScreen: "party-create-screen",
+  createSubmit: "party-create-submit",
+  nameInput: "party-name-input",
+  locationInput: "party-location-input",
+  sceneInput: "party-scene-input",
+  joinButton: "party-join-button",
+  leaveButton: "party-leave-button",
+  startButton: "party-start-button",
+  finishButton: "party-finish-button",
+  actionInput: "party-action-input",
+  sendButton: "party-send-button",
+};
+
+export const REALM = {
+  screen: "realm-screen",
+  marketplaceLink: "realm-marketplace-link",
+  factionsLink: "realm-factions-link",
+  partiesLink: "realm-parties-link",
 };
