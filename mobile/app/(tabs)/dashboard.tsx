@@ -1,32 +1,31 @@
 import { Ionicons } from "@expo/vector-icons";
 import { router, useFocusEffect } from "expo-router";
 import { useCallback, useState } from "react";
-import { StyleSheet, Text, TouchableOpacity, View } from "react-native";
+import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { DASHBOARD } from "@/constants/testIds";
-import { Character, CharacterApi, WorldApi, WorldClock } from "@/src/api";
+import { WorldApi, WorldClock } from "@/src/api";
 import { Card } from "@/src/components/Card";
 import { Portrait, XpBar } from "@/src/components/CharacterBits";
 import { EmptyState } from "@/src/components/StateViews";
 import { Screen } from "@/src/components/Screen";
+import { useActiveCharacter } from "@/src/hooks/useActiveCharacter";
 import { useAuth } from "@/src/context/AuthContext";
 import { colors, radius, spacing, typography } from "@/src/theme/theme";
 
 export default function DashboardScreen() {
   const { user, signOut, refresh } = useAuth();
-  const [characters, setCharacters] = useState<Character[]>([]);
+  const { character: hero, characters, reload: reloadChars, setActive } = useActiveCharacter();
   const [clock, setClock] = useState<WorldClock | null>(null);
   const [refreshing, setRefreshing] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [switchingId, setSwitchingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [chars, wc] = await Promise.allSettled([
-      CharacterApi.list(),
-      WorldApi.clock(),
-    ]);
-    if (chars.status === "fulfilled") setCharacters(chars.value);
+    const [, wc] = await Promise.allSettled([reloadChars(), WorldApi.clock()]);
     if (wc.status === "fulfilled") setClock(wc.value);
     refresh();
-  }, [refresh]);
+  }, [refresh, reloadChars]);
 
   useFocusEffect(
     useCallback(() => {
@@ -40,7 +39,20 @@ export default function DashboardScreen() {
     setRefreshing(false);
   };
 
-  const hero = characters[0];
+  const onPickHero = async (id: string) => {
+    if (id === hero?.id) {
+      setSwitcherOpen(false);
+      return;
+    }
+    setSwitchingId(id);
+    try {
+      await setActive(id);
+    } finally {
+      setSwitchingId(null);
+      setSwitcherOpen(false);
+    }
+  };
+
   const calendar = clock?.calendar;
   const phase = clock?.time_of_day?.phase;
 
@@ -83,7 +95,20 @@ export default function DashboardScreen() {
         </View>
       </Card>
 
-      <Text style={styles.sectionTitle}>Active Hero</Text>
+      <View style={styles.sectionHeader}>
+        <Text style={styles.sectionHeaderTitle}>Active Hero</Text>
+        {characters.length > 1 ? (
+          <TouchableOpacity
+            testID={DASHBOARD.switchHeroButton}
+            style={styles.switchBtn}
+            onPress={() => setSwitcherOpen(true)}
+            hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+          >
+            <Ionicons name="swap-horizontal" size={16} color={colors.violet} />
+            <Text style={styles.switchBtnText}>Switch</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
       {hero ? (
         <TouchableOpacity
           testID={DASHBOARD.activeCharacterCard}
@@ -141,6 +166,46 @@ export default function DashboardScreen() {
           testID={DASHBOARD.worldLink}
         />
       </View>
+
+      <Modal
+        visible={switcherOpen}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setSwitcherOpen(false)}
+      >
+        <Pressable style={styles.modalBackdrop} onPress={() => setSwitcherOpen(false)}>
+          <Pressable style={styles.sheet} testID={DASHBOARD.heroSwitcher}>
+            <Text style={styles.sheetTitle}>Choose your hero</Text>
+            <Text style={styles.sheetSub}>Switching changes who you play everywhere.</Text>
+            {characters.map((c) => {
+              const isActive = c.id === hero?.id;
+              return (
+                <TouchableOpacity
+                  key={c.id}
+                  testID={DASHBOARD.heroOption(c.id)}
+                  style={[styles.heroOption, isActive && styles.heroOptionActive]}
+                  activeOpacity={0.85}
+                  disabled={switchingId === c.id}
+                  onPress={() => onPickHero(c.id)}
+                >
+                  <Portrait uri={c.portrait_url} name={c.name} size={44} />
+                  <View style={styles.heroOptionInfo}>
+                    <Text style={styles.heroOptionName} numberOfLines={1}>
+                      {c.name}
+                    </Text>
+                    <Text style={styles.heroOptionMeta} numberOfLines={1}>
+                      {c.race} · {c.character_class}
+                    </Text>
+                  </View>
+                  {isActive ? (
+                    <Ionicons name="checkmark-circle" size={22} color={colors.violet} />
+                  ) : null}
+                </TouchableOpacity>
+              );
+            })}
+          </Pressable>
+        </Pressable>
+      </Modal>
     </Screen>
   );
 }
@@ -218,6 +283,57 @@ const styles = StyleSheet.create({
     marginTop: spacing.xl,
     marginBottom: spacing.md,
   },
+  sectionHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: spacing.xl,
+    marginBottom: spacing.md,
+  },
+  sectionHeaderTitle: { ...typography.h3, color: colors.textPrimary },
+  switchBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 6,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.violetBorder,
+    backgroundColor: colors.violetDim,
+  },
+  switchBtnText: { ...typography.small, color: colors.violetSoft, fontWeight: "700" },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.6)",
+    justifyContent: "flex-end",
+  },
+  sheet: {
+    backgroundColor: colors.surface,
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+    padding: spacing.lg,
+    paddingBottom: spacing.xl,
+    borderWidth: 1,
+    borderColor: colors.border,
+    gap: spacing.sm,
+  },
+  sheetTitle: { ...typography.h2, color: colors.textPrimary },
+  sheetSub: { ...typography.small, color: colors.textMuted, marginBottom: spacing.sm },
+  heroOption: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    backgroundColor: colors.bg,
+  },
+  heroOptionActive: { borderColor: colors.violet, backgroundColor: colors.violetDim },
+  heroOptionInfo: { flex: 1 },
+  heroOptionName: { ...typography.bodyStrong, color: colors.textPrimary },
+  heroOptionMeta: { ...typography.small, color: colors.textSecondary, marginTop: 2 },
   heroRow: { flexDirection: "row", alignItems: "center" },
   heroInfo: { flex: 1, marginLeft: spacing.md },
   heroName: { ...typography.h2, color: colors.textPrimary },

@@ -527,6 +527,7 @@ class User(BaseModel):
     suspended_until: Optional[datetime] = None
     suspension_reason: Optional[str] = None
     ban_reason: Optional[str] = None
+    active_character_id: Optional[str] = None  # global "who am I playing" hero
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class UserResponse(BaseModel):
@@ -536,6 +537,7 @@ class UserResponse(BaseModel):
     currency: int
     role: str
     status: str
+    active_character_id: Optional[str] = None
     created_at: datetime
 
 # Character Models
@@ -1642,13 +1644,11 @@ async def submit_location_rp(
     current_user: User = Depends(get_current_user)
 ):
     """Submit a roleplay action in a specific location"""
-    # Get user's characters
-    characters = await db.characters.find({"user_id": current_user.id}, {"_id": 0}).to_list(10)
-    if not characters:
+    # Use the player's active hero (global dashboard switcher) — falls back to
+    # their first character for backwards compatibility.
+    char = await resolve_active_character(current_user)
+    if not char:
         raise HTTPException(status_code=400, detail="You need to create a character first")
-    
-    # Use first character
-    char = characters[0]
     
     # Prepare character bio for AI context (no stats/levels)
     character_bio = {
@@ -2312,8 +2312,8 @@ async def get_scene_state(
     The data is filtered for the calling user's primary character so the
     relationship score reflects how THIS character knows each NPC.
     """
-    characters = await db.characters.find({"user_id": current_user.id}, {"_id": 0}).to_list(10)
-    char_id = characters[0]["id"] if characters else "anonymous"
+    active = await resolve_active_character(current_user)
+    char_id = active["id"] if active else "anonymous"
     npc_service = NPCMemoryService(db)
     state = await npc_service.build_scene_state(nation, location, char_id)
     # Inject world clock + active festivals so the player UI can show them
@@ -2400,6 +2400,22 @@ async def _resolve_character_for_user(character_id: str, user: User) -> Dict:
     if char.get("user_id") != user.id and user.role not in ("admin", "moderator"):
         raise HTTPException(status_code=403, detail="That character is not yours")
     return char
+
+
+async def resolve_active_character(user: User) -> Optional[Dict]:
+    """Return the user's globally-selected active hero (the dashboard character
+    switcher), falling back to their first character. None if they have none.
+    Centralizes the old `characters[0]` default so switching heroes changes who
+    the player controls in RP and scene state."""
+    chars = await db.characters.find({"user_id": user.id}, {"_id": 0}).to_list(100)
+    if not chars:
+        return None
+    active_id = getattr(user, "active_character_id", None)
+    if active_id:
+        for c in chars:
+            if c.get("id") == active_id:
+                return c
+    return chars[0]
 
 
 # ==================== PHASE 2 ROUTES ====================

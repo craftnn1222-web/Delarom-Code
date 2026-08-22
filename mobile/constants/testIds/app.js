@@ -17,6 +17,9 @@ export const DASHBOARD = {
   charactersLink: "dashboard-characters-link",
   worldLink: "dashboard-world-link",
   createCharacterLink: "dashboard-create-character-link",
+  switchHeroButton: "dashboard-switch-hero-button",
+  heroSwitcher: "dashboard-hero-switcher",
+  heroOption: (id) => `dashboard-hero-option-${id}`,
 };
 
 export const CHARACTERS = {

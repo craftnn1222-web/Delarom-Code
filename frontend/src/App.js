@@ -2,6 +2,7 @@ import React from 'react';
 import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'sonner';
 import { AuthProvider } from './contexts/AuthContext';
+import { CharacterProvider } from './contexts/CharacterContext';
 import { MusicProvider } from './contexts/MusicContext';
 import MusicPlayer from './components/MusicPlayer';
 import LandingPage from './pages/LandingPage';
@@ -45,6 +46,7 @@ import './App.css';
 function App() {
   return (
     <AuthProvider>
+      <CharacterProvider>
       <MusicProvider>
         <BrowserRouter>
           <Toaster position="top-right" richColors offset={80} />
@@ -98,6 +100,7 @@ function App() {
         </Routes>
         </BrowserRouter>
       </MusicProvider>
+      </CharacterProvider>
     </AuthProvider>
   );
 }

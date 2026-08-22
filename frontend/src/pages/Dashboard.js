@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { getMe, getMyCharacters, getTransactions } from '../utils/api';
+import { useCharacter } from '../contexts/CharacterContext';
 import FactionBadge from '../components/factions/FactionBadge';
 import useFactionBadges from '../hooks/useFactionBadges';
 import AnimatedBackground from '../components/AnimatedBackground';
@@ -14,6 +15,24 @@ const Dashboard = () => {
   const [characters, setCharacters] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  const { characters: roster, activeCharacter, switchCharacter } = useCharacter();
+  const [switching, setSwitching] = useState(null);
+
+  const heroes = roster.length ? roster : characters;
+
+  const handleSwitch = async (c) => {
+    if (activeCharacter?.id === c.id || switching) return;
+    setSwitching(c.id);
+    try {
+      await switchCharacter(c.id);
+      toast.success(`Now playing as ${c.name}`);
+    } catch (_e) {
+      toast.error('Could not switch character');
+    } finally {
+      setSwitching(null);
+    }
+  };
 
   // Visibility pass — fetch faction badges for the user's characters.
   const factionsByChar = useFactionBadges(characters.map((c) => c.id));
@@ -66,6 +85,64 @@ const Dashboard = () => {
             Welcome back, {user?.username}!
           </h1>
           <p className="text-gray-400">Your adventure in Delarom continues...</p>
+        </div>
+
+        {/* Character Switcher — the global "who am I playing" hero */}
+        <div className="glass-dark p-6 rounded-2xl mb-8" data-testid="character-switcher">
+          <div className="flex items-center gap-3 mb-1">
+            <Users className="w-5 h-5 text-purple-300" />
+            <h2 className="text-xl font-bold text-purple-200">Playing As</h2>
+            {activeCharacter && (
+              <span className="text-sm text-purple-300/80" data-testid="active-character-name">
+                — {activeCharacter.name}
+              </span>
+            )}
+          </div>
+          <p className="text-xs text-gray-500 mb-4">
+            Pick your hero once — they&apos;ll be used for roleplay, quests, and everywhere across web and mobile.
+          </p>
+          {heroes.length === 0 ? (
+            <div className="flex items-center justify-between">
+              <p className="text-gray-400 text-sm">No characters yet. Forge your first legend.</p>
+              <Link to="/characters">
+                <Button size="sm" className="bg-gradient-to-r from-purple-600 to-pink-600">Create Character</Button>
+              </Link>
+            </div>
+          ) : (
+            <div className="flex flex-wrap gap-3">
+              {heroes.map((c) => {
+                const isActive = activeCharacter?.id === c.id;
+                return (
+                  <button
+                    key={c.id}
+                    data-testid={`switch-character-${c.id}`}
+                    onClick={() => handleSwitch(c)}
+                    disabled={switching === c.id}
+                    className={`flex items-center gap-3 px-4 py-2 rounded-xl border transition-all disabled:opacity-60 ${
+                      isActive
+                        ? 'border-purple-400 bg-purple-500/20 ring-1 ring-purple-400'
+                        : 'border-white/10 bg-white/5 hover:border-purple-400/50'
+                    }`}
+                  >
+                    {c.portrait_url ? (
+                      <img src={c.portrait_url} alt={c.name} className="w-9 h-9 rounded-full object-cover" />
+                    ) : (
+                      <div className="w-9 h-9 rounded-full bg-purple-800/50 flex items-center justify-center text-sm text-white">
+                        {c.name?.[0] || '?'}
+                      </div>
+                    )}
+                    <div className="text-left">
+                      <p className="text-white text-sm font-semibold leading-tight">{c.name}</p>
+                      <p className="text-xs text-gray-400 leading-tight">{c.race} • {c.character_class}</p>
+                    </div>
+                    {isActive && (
+                      <span className="text-[10px] uppercase tracking-wide text-purple-300 ml-1 font-bold">Active</span>
+                    )}
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         {/* Stats Grid */}

@@ -8,6 +8,11 @@ from typing import List
 from datetime import datetime
 import base64
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
+from pydantic import BaseModel
+
+
+class ActiveCharacterRequest(BaseModel):
+    character_id: str
 
 
 def attach_character_routes(
@@ -37,6 +42,39 @@ def attach_character_routes(
             if isinstance(char.get('created_at'), str):
                 char['created_at'] = datetime.fromisoformat(char['created_at'])
         return characters
+
+    @api_router.get("/characters/active")
+    async def get_active_character(current_user: User = Depends(get_current_user)):
+        """Return the user's globally-selected active hero (falls back to their
+        first character). Registered BEFORE /characters/{character_id} so the
+        static path wins. Returns {"character": null} when they have none."""
+        chars = await db.characters.find({"user_id": current_user.id}, {"_id": 0}).to_list(100)
+        if not chars:
+            return {"character": None, "active_character_id": None}
+        active_id = getattr(current_user, "active_character_id", None)
+        chosen = next((c for c in chars if c.get("id") == active_id), None) or chars[0]
+        if isinstance(chosen.get("created_at"), str):
+            chosen["created_at"] = datetime.fromisoformat(chosen["created_at"])
+        return {"character": Character(**chosen), "active_character_id": chosen["id"]}
+
+    @api_router.put("/characters/active")
+    async def set_active_character(
+        payload: ActiveCharacterRequest,
+        current_user: User = Depends(get_current_user),
+    ):
+        """Set the user's active hero (validates ownership)."""
+        char = await db.characters.find_one(
+            {"id": payload.character_id, "user_id": current_user.id}, {"_id": 0}
+        )
+        if not char:
+            raise HTTPException(status_code=404, detail="Character not found or not yours")
+        await db.users.update_one(
+            {"id": current_user.id},
+            {"$set": {"active_character_id": payload.character_id}},
+        )
+        if isinstance(char.get("created_at"), str):
+            char["created_at"] = datetime.fromisoformat(char["created_at"])
+        return {"character": Character(**char), "active_character_id": payload.character_id}
 
     @api_router.get("/characters/{character_id}", response_model=Character)
     async def get_character(character_id: str):

@@ -1,0 +1,48 @@
+{
+  "summary": "Iteration 32 — Global Character Switcher tested end-to-end on backend, web, and mobile. All 6 pytest cases pass. Web dashboard shows the 'Playing As' switcher, updates the active-character label and toasts on click, and persists across a reload. Mobile dashboard 'Active Hero' card shows a Switch button (only when >1 character), opens the hero picker sheet, updates the card on pick, and the switch propagates to the server (cross-platform parity confirmed against the shared /api/characters/active). No blocking issues found. One minor RN-Web deprecation warning surfaced in the console (props.pointerEvents).",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": [
+        {"component": "TouchableOpacity/Pressable", "issue": "React Native Web deprecation warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-blocking, but should migrate uses of the pointerEvents prop to style.pointerEvents to silence the warning. Reference: appears when tapping login Enter button (any RN component using pointerEvents prop)."}
+      ]
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_active_character.py",
+    "/app/test_reports/pytest/iter32_active_character.xml"
+  ],
+  "action_items": [
+    "(Optional) Audit the mobile codebase for any use of the `pointerEvents` prop and move it to `style.pointerEvents` to eliminate the RN-Web deprecation warning."
+  ],
+  "critical_code_review_comments": [
+    "routes/characters.py: /characters/active is correctly registered BEFORE /characters/{character_id}. Verified via a dedicated test.",
+    "routes/characters.py PUT /characters/active: correctly validates ownership (find_one({id, user_id})) and returns 404 for non-owned/bogus ids.",
+    "server.py resolve_active_character(): centralizes the fallback correctly (falls back to first character when active_character_id is unset/missing). Location RP (submit_location_rp) and scene-state both call it — verified switch changes the resolved hero at the server layer.",
+    "CharacterContext.js: uses Promise.allSettled for parallel roster+active fetch, tolerant of transient blips. switchCharacter updates local state from the server response — matches server truth.",
+    "mobile useActiveCharacter.ts: `.catch(() => ({character:null,...}))` on active() call means a transient failure would silently fall back to roster[0]; acceptable but consider surfacing the failure in a future revision."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_active_character.py"
+  ],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100% (web + mobile flows verified)"},
+  "test_credentials": "Admin: craftnn1222@gmail.com / admin123 (10 characters — good for switch testing).",
+  "seed_data_creation": "None. Used existing admin characters.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests live at /app/backend/tests/test_active_character.py. Run with REACT_APP_BACKEND_URL exported. Note that the active-character selection persists between test runs on the shared server — tests are order-independent because they always explicitly switch before asserting. The admin's active hero is left as 'Admin Buyer' at the end of the mobile flow (last switch); the main agent's own verification comment noted the same value, so no behavioral change expected.",
+  "rca of the issue": "No issue — feature works as designed on all three surfaces (backend, web, mobile) with real cross-platform persistence."
+}

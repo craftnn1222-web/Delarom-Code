@@ -126,9 +126,19 @@ export const AuthApi = {
   me: () => api.get<User>("/auth/me"),
 };
 
+export interface ActiveCharacterResponse {
+  character: Character | null;
+  active_character_id: string | null;
+}
+
 export const CharacterApi = {
   list: () => api.get<Character[]>("/characters"),
   get: (id: string) => api.get<Character>(`/characters/${id}`),
+  active: () => api.get<ActiveCharacterResponse>("/characters/active"),
+  setActive: (id: string) =>
+    api.put<{ character: Character; active_character_id: string }>("/characters/active", {
+      character_id: id,
+    }),
   create: (payload: CharacterCreate) => api.post<Character>("/characters", payload),
   uploadImage: (id: string, form: FormData) =>
     api.postForm<{ portrait_url: string }>(`/characters/${id}/upload-image`, form),
