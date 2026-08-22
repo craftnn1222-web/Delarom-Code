@@ -1,0 +1,45 @@
+{
+  "summary": "Verified the repair-world-locations fix on preview across web + mobile + API. All 6 previously-empty cities (ammeonon/amberport, ammeonon/duncroft, dhor-kuldor/emberhold, dhor-kuldor/frosthold, dhor-kuldor/stonehaven, veiled-realms/rakesh) now show exactly 4 starter locations (Gate, Market Row, Town Square, Hearth). No regression on populated cities (ammeonon/wymroost still returns 36 locations). Dhor-Kuldor slug parity fix confirmed: /api/nations/images returns 'dhor-kuldor' (not 'dhor-khuldor') and mobile World tab now loads Dhor-Kuldor cities (89 cities) via nation-card-dhor-kuldor. Full mobile RP entry flow works from previously-empty cities on both Dhor-Kuldor/Emberhold and Ammeonon/Amberport (location-card-* → rp-screen).",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_results": {
+    "api_sanity": {
+      "GET /api/locations/dhor-kuldor/emberhold/locations": "PASS (4 locations)",
+      "GET /api/locations/ammeonon/amberport/locations": "PASS (4 locations)",
+      "GET /api/nations/images": "PASS (slug 'dhor-kuldor' present, no 'dhor-khuldor')"
+    },
+    "web_city_locations": {
+      "ammeonon/amberport": "4 location cards",
+      "ammeonon/duncroft": "4 location cards",
+      "dhor-kuldor/emberhold": "4 location cards",
+      "dhor-kuldor/frosthold": "4 location cards",
+      "dhor-kuldor/stonehaven": "4 location cards",
+      "veiled-realms/rakesh": "4 location cards",
+      "ammeonon/wymroost (regression check)": "36 location cards (no regression)"
+    },
+    "mobile": {
+      "world tab nation cards": "5 nations rendered including nation-card-dhor-kuldor",
+      "Dhor-Kuldor nation -> cities": "89 city-card-* items (previously broken by slug mismatch)",
+      "Dhor-Kuldor/Emberhold locations": "4 location-card-* rendered, no empty banner",
+      "Emberhold location tap -> rp-screen": "rp-screen visible, /rp?nation=dhor-kuldor&location=emberhold-gate",
+      "Ammeonon/Amberport locations": "4 location-card-* rendered",
+      "Amberport location tap -> rp-screen": "rp-screen visible, /rp?nation=ammeonon&location=amberport-gate"
+    }
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin craftnn1222@gmail.com / admin123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None - the repair endpoint had already been run on preview per E1.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Bug fix is fully verified. Note for future testing: web CityDetail lazy-loads location cards via IntersectionObserver, so scroll the page to bottom before counting [data-testid^='location-card-']. Web route is /nations/:nation/:citySlug (not /cities/). Mobile Expo web preview is at https://npc-economy-preview.expo.preview.emergentagent.com and uses testID (renders as data-testid). Login field on mobile is a single 'Enter' button.",
+  "rca of the issue": "Two-part root cause: (1) canon-city seed added city records to /api/cities but did NOT seed active RP locations, leaving ~15 cities across ammeonon/dhor-kuldor/veiled-realms with an empty locations collection -> UI shows 'No Locations Yet'. (2) The nations collection had the outlier slug 'dhor-khuldor' while cities/locations used 'dhor-kuldor'; web has a hardcoded slug list so it was mostly unaffected, but mobile navigates using the slug returned by /api/nations/images, so tapping the Dhor-Kuldor nation card fetched cities under the wrong slug and returned empty. Fix (POST /api/admin/repair-world-locations, already executed on preview) normalises the nation slug to 'dhor-kuldor' and idempotently seeds a 4-location starter set (Town Square, Hearth tavern, Market Row, Gate; all is_active + is_rp_enabled) for any city with zero active locations. All verifications pass."
+}

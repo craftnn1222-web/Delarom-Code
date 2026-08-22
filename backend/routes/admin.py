@@ -253,6 +253,19 @@ def attach_admin_routes(
         return status
 
 
+    @api_router.post("/admin/repair-world-locations")
+    async def repair_world_locations(admin: User = Depends(require_admin)):
+        """Repair the 'some cities show no locations' regression.
+
+        Idempotent & additive:
+        - normalises the outlier `dhor-khuldor` nation slug to `dhor-kuldor`.
+        - seeds a small starter set of RP locations for any city that has none.
+        Safe to run repeatedly; never edits hand-authored locations.
+        """
+        from repair_world_data import repair_world_data
+        return await repair_world_data(db)
+
+
     class AdminPasswordResetRequest(BaseModel):
         new_password: str = Field(min_length=6, description="New password (min 6 characters)")
 

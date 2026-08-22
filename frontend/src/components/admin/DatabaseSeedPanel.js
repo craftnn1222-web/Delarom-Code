@@ -1,11 +1,11 @@
 import React, { useState } from 'react';
 import { toast } from 'sonner';
-import { Database, AlertCircle, Loader2, CheckCircle2, XCircle, Shield, Hammer, Crown, Sparkles, Trash2, Image as ImageIcon } from 'lucide-react';
+import { Database, AlertCircle, Loader2, CheckCircle2, XCircle, Shield, Hammer, Crown, Sparkles, Trash2, Image as ImageIcon, Wrench } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Progress } from '../ui/progress';
 import { Switch } from '../ui/switch';
-import { adminSeedStarterFactions, adminSeedMasterNpcs, adminSeedRoyalsAndNobles, adminPopulateCitiesAi, adminCleanupGeoData, adminImageBatchSurvey, adminImageBatchStatus, adminImageBatchGenerate, adminImageBatchStop, adminSeedTitanSacredSites, adminSeedDhorKuldorCanon, adminSeedAllRealmsCanon } from '../../utils/api';
+import { adminSeedStarterFactions, adminSeedMasterNpcs, adminSeedRoyalsAndNobles, adminPopulateCitiesAi, adminCleanupGeoData, adminImageBatchSurvey, adminImageBatchStatus, adminImageBatchGenerate, adminImageBatchStop, adminSeedTitanSacredSites, adminSeedDhorKuldorCanon, adminSeedAllRealmsCanon, adminRepairWorldLocations } from '../../utils/api';
 
 /**
  * Database Seed Panel (admin-only) — current world data counts +
@@ -32,6 +32,26 @@ const DatabaseSeedPanel = ({ dbStatus, seedStatus, seeding, withImages, onToggle
   const [kuldorResult, setKuldorResult] = useState(null);
   const [realmsBusy, setRealmsBusy] = useState(false);
   const [realmsResult, setRealmsResult] = useState(null);
+  const [repairBusy, setRepairBusy] = useState(false);
+  const [repairResult, setRepairResult] = useState(null);
+
+  const handleRepairWorld = async () => {
+    if (repairBusy) return;
+    setRepairBusy(true);
+    setRepairResult(null);
+    try {
+      const r = await adminRepairWorldLocations();
+      setRepairResult(r.data);
+      const filled = r.data?.baseline_locations?.cities_filled || 0;
+      const made = r.data?.baseline_locations?.locations_created || 0;
+      const slug = r.data?.nation_slug?.fixed ? ' · nation slug fixed' : '';
+      toast.success(`World repaired — ${filled} empty cities filled, ${made} locations added${slug}.`);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'World repair failed.');
+    } finally {
+      setRepairBusy(false);
+    }
+  };
 
   const handleSeedFactions = async () => {
     if (factionSeeding) return;
@@ -227,6 +247,47 @@ const DatabaseSeedPanel = ({ dbStatus, seedStatus, seeding, withImages, onToggle
       </div>
     </div>
 
+    {/* Repair World — one-click fix for missing city locations + nation slug */}
+    <div className="bg-emerald-950/30 border border-emerald-600/40 rounded-lg p-6 mb-6" data-testid="repair-world-panel">
+      <div className="flex items-center gap-3 mb-3">
+        <Wrench className="w-6 h-6 text-emerald-300" />
+        <h3 className="text-lg font-bold text-emerald-200">Repair World (Fix Missing Locations)</h3>
+      </div>
+      <p className="text-gray-400 mb-4">
+        One-click fix for the &ldquo;this city has no locations yet&rdquo; issue. Normalises the
+        <code className="text-emerald-300 mx-1">dhor-khuldor → dhor-kuldor</code> nation slug and
+        seeds a starter set of RP locations (Town Square, Tavern, Market Row, Gate) for every
+        city that currently has none. Purely additive &amp; idempotent — safe to run any time,
+        never touches hand-authored locations.
+      </p>
+      <Button
+        onClick={handleRepairWorld}
+        disabled={repairBusy}
+        className="bg-gradient-to-r from-emerald-700 to-teal-700 hover:from-emerald-800 hover:to-teal-800 text-base px-6 py-5"
+        data-testid="repair-world-btn"
+      >
+        {repairBusy ? (
+          <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Repairing the world…</>
+        ) : (
+          <><Wrench className="w-5 h-5 mr-2" />Repair World Locations</>
+        )}
+      </Button>
+      {repairResult && (
+        <div className="mt-4 bg-black/40 border border-emerald-500/30 rounded-md p-4 text-sm space-y-1" data-testid="repair-world-result">
+          <p className="text-emerald-200">
+            <CheckCircle2 className="w-4 h-4 inline mr-1" />
+            <strong>{repairResult.baseline_locations?.cities_filled || 0}</strong> empty cities filled ·{' '}
+            <strong>{repairResult.baseline_locations?.locations_created || 0}</strong> locations created
+          </p>
+          <p className="text-emerald-200/80 text-xs">
+            Nation slug: {repairResult.nation_slug?.fixed
+              ? (repairResult.nation_slug?.note || 'fixed')
+              : (repairResult.nation_slug?.reason || 'already canonical')}
+          </p>
+        </div>
+      )}
+    </div>
+
     {/* Current Status */}
     <div className="bg-black/30 rounded-lg p-6 mb-6" data-testid="db-status-block">
       <h3 className="text-lg font-bold text-purple-300 mb-4">Current Database Status</h3>
@@ -359,7 +420,7 @@ const DatabaseSeedPanel = ({ dbStatus, seedStatus, seeding, withImages, onToggle
       </div>
       <p className="text-gray-400 mb-4">
         Idempotent — inserts the 6 canonical factions (Ardent Legion, Forsaken Court,
-        Elderborn Alliance, Forgemaster's Guild, High King's Court, Loremaster's Guild)
+        Elderborn Alliance, Forgemaster&apos;s Guild, High King&apos;s Court, Loremaster&apos;s Guild)
         if missing, or refreshes their copy if already present. Also seeds each one
         with 6 founding NPC members (2 officers + 4 sworn) and an initial coffer of
         1,000,000 gold. Existing memberships, NPC rosters, and full coffers are untouched.
