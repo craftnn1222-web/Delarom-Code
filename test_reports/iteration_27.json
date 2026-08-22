@@ -1,0 +1,41 @@
+{
+  "summary": "Frontend-only e2e testing of the NEW Expo/React Native mobile app (/app/mobile) at the Expo web preview URL, mobile viewport 390x844. Login (valid + invalid), dashboard (world clock, coin purse, active hero, quick tiles), character list & detail, character creation with 60-point attribute allocation, world drill-down (nations -> cities -> locations), and the AI LocationRP roundtrip (GPT-4o) all work correctly and persist on reload. Two navigation bugs were found: (1) CRITICAL logout does not redirect to /login (no auth guard on the (tabs) stack) leaving the user stuck on a broken dashboard, and (2) Register submit succeeds on the backend (application created & pending) but the success Alert.alert does not fire on React Native Web, so the user receives no confirmation and is not redirected back to /login.",
+  "platforms_tested": ["mobile"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "mobile": {
+      "ui_bugs": [
+        {"component": "TabsLayout / AuthContext.signOut", "issue": "After tapping the dashboard logout button, storage token + user state are cleared but the app does NOT navigate to /(auth)/login. The (tabs) stack has no auth guard, so the user is left on /dashboard rendering a broken state (Coin Purse 0 g, name shows fallback 'Traveler', but old cached character card + roster still visible from stale state). Tapping any nav or link keeps them in the authenticated stack. Only manually navigating to / (root index) redirects out. Reference: /app/mobile/app/(tabs)/_layout.tsx (no guard) and /app/mobile/src/context/AuthContext.tsx:65-68 (signOut only clears state).", "testID": "dashboard-logout-button", "priority": "CRITICAL"},
+        {"component": "RegisterScreen (Alert.alert on web)", "issue": "Registration POST succeeds and creates a pending application on the backend (verified via /api/admin/applications), but Alert.alert(...) does NOT render on React Native Web / Expo web preview, so (a) no 'Application sent' confirmation is shown to the user, and (b) the redirect to /(auth)/login inside the Alert button's onPress never fires — user is stuck on the /register form with cleared error and no visible feedback. Reference: /app/mobile/app/(auth)/register.tsx:47-51. Fix: replace Alert.alert with an in-app modal/toast (or a Platform.OS === 'web' branch) that also triggers the router.replace.", "testID": "register-submit-button", "priority": "HIGH"}
+      ],
+      "integration_issues": [],
+      "design_issues": [
+        {"screen": "Dashboard after logout (buggy state)", "issues": ["Because the router does not leave (tabs) on logout, the dashboard shows a jarring half-cleared state — 'Welcome back, Traveler', Coin Purse '0 g', but the previously-loaded Active Hero card and roster count remain because DashboardScreen's local `characters` state is not reset when user becomes null."]}
+      ],
+      "react_native_issues": [
+        {"component": "React Native Web deprecation warnings", "issue": "Console shows repeated warnings 'textShadow* style props are deprecated. Use \"textShadow\"' and 'props.pointerEvents is deprecated. Use style.pointerEvents'. Not blocking, but should be cleaned up in the theme / icon components. Reference: /app/mobile/src/theme/theme.ts and Ionicons usage."}
+      ]
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [],
+  "action_items": [
+    "CRITICAL: Add an auth guard to /app/mobile/app/(tabs)/_layout.tsx (or wrap the tabs with a Redirect to /(auth)/login when useAuth().user is null after loading). Alternatively, have signOut call router.replace('/(auth)/login') after clearing state.",
+    "HIGH: On the register screen, do not rely on Alert.alert for the success flow on web. Either (a) use a Platform-guarded branch that calls router.replace('/(auth)/login') directly on web, or (b) show an in-app success banner/modal and then navigate. Currently registration silently succeeds with zero user feedback on Expo web preview.",
+    "Reset DashboardScreen local state (characters, clock) when user transitions to null so the post-logout flash of stale data disappears (secondary to fixing the redirect).",
+    "Optional: silence React Native Web deprecation warnings for textShadow* and pointerEvents by updating theme typography / removing legacy props from icon wrappers."
+  ],
+  "critical_code_review_comments": [
+    "(tabs)/_layout.tsx has no auth protection — any deeplink into /dashboard, /characters, /world, /rp is reachable without a valid session. Combined with the missing logout redirect this is a real UX and mild security concern (backend still enforces the JWT so protected data won't leak, but the client renders a broken authenticated shell).",
+    "RegisterScreen relies on Alert.alert for the ONLY post-submit UX. On React Native Web this component silently no-ops, so the entire register flow appears broken on the Expo web preview. Consider extracting an app-wide toast/modal utility.",
+    "DashboardScreen keeps local `characters` state that outlives the auth session. Combine with an effect that clears state when `user` becomes null, or move roster into a global store keyed by user id."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a (frontend-only)", "frontend": "78% (7/9 flows fully pass; logout redirect + register success feedback broken on web)"},
+  "test_credentials": "Admin craftnn1222@gmail.com / admin123 (existing seed). Created a test pending application TESTPeti_1787373701 (@example.com) during register test — safe to leave pending or purge.",
+  "seed_data_creation": "Created one TEST_ character 'TESTHero_M1' (Human Ranger, Selindori, 10/10/10/10/10/10) under admin — visible in /api/characters. Also created one pending registration application 'TESTPeti_1787373701' during register test.",
+  "retest_needed": true,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Login/dashboard/characters/create/world/RP flows are all working on the Expo web preview at mobile viewport 390x844. Two fixes required from main agent: (1) route protection on (tabs) + navigate-to-login on signOut, and (2) web-compatible success feedback on the register screen (Alert.alert doesn't render on RN Web). RP endpoint auto-picks the first character; the RP screen groups player+AI in ONE testID='rp-log-entry' wrapper per turn — assertions should count turns not bubbles. To exercise RP, drill Ammeonon > Azure > 'Ancient Market Square' (Amberport has zero locations by design). GPT-4o RT takes ~10-25s.",
+  "rca of the issue": "signOut in /app/mobile/src/context/AuthContext.tsx clears storage token + user state but does NOT call router.replace. The Stack root layout doesn't watch auth state either, and (tabs)/_layout.tsx has no gate — so the tabs remain mounted with a null user, producing a broken dashboard shell. Repro: log in as admin -> tap logout icon (dashboard-logout-button) -> observe URL stays /dashboard, coin purse shows 0 g, greeting shows 'Traveler', but Active Hero + roster remain from stale state. Fix option A: in AuthContext signOut, after clearing state call router.replace('/(auth)/login'). Fix option B (preferred): add a guard component in (tabs)/_layout.tsx that returns <Redirect href='/(auth)/login' /> when !user && !loading. Same guard should protect /rp.tsx. For the register alert issue: Alert.alert on React Native Web is a documented no-op for the buttons/callbacks; use a Platform check or a custom Modal to show the confirmation and navigate."
+}

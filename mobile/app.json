@@ -35,6 +35,12 @@
           "resizeMode": "contain",
           "backgroundColor": "#000000"
         }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Delarom uses your photos to set your character's portrait."
+        }
       ]
     ],
     "experiments": {
