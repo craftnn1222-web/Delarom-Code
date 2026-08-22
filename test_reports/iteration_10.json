@@ -1,0 +1,52 @@
+{
+  "summary": "Regression test of JWT → httpOnly cookie migration. Backend cookie/Bearer/logout/CORS flows all PASS (14/14 pytest). Frontend login, session persistence, anonymous redirect, logout flows PASS. ONE CRITICAL regression introduced by the migration: /admin page now renders a blank white screen — AdminDashboard.js has a Temporal Dead Zone error (`Cannot access 'fetchCurrentUser' before initialization`) crashing the entire React subtree (navbar included). Cookie storage / httpOnly+Secure+Lax flags / localStorage.token=null / Bearer fallback / logout-clears-cookie all verified working.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {
+        "endpoint": "OPTIONS /api/auth/login (public ingress)",
+        "issue": "Public ingress/Cloudflare overrides Access-Control-Allow-Origin to '*' on preflight AND sets Access-Control-Allow-Credentials: true on POST responses — this combination is invalid per CORS spec and would break any cross-origin browser request. FastAPI itself (verified at http://localhost:8001) correctly returns the explicit origin + credentials:true. Same-origin requests (the current frontend→backend topology on fantasy-map-dev.preview.emergentagent.com) work fine. Action: only impacts future cross-origin clients (e.g., continentsofdelarom.com hitting the preview backend). Likely an infra/ingress override, not a code bug."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AdminDashboard (/app/frontend/src/pages/AdminDashboard.js)",
+        "issue": "CRITICAL: TDZ (Temporal Dead Zone) error — `useEffect` at line 57-59 references `fetchCurrentUser` in its dependency array, but `fetchCurrentUser` is declared with `const` + useCallback at line 75 (BELOW the useEffect). React evaluates the dep array synchronously during render before the const initializer runs → ReferenceError: 'Cannot access fetchCurrentUser before initialization'. Result: /admin renders a 100% blank white page (the error crashes the whole subtree because there is no ErrorBoundary). Browser pageerror confirmed. Fix options: (A) move the `const fetchCurrentUser = useCallback(...)` declaration ABOVE the useEffect that references it, OR (B — preferred for this migration) delete the local fetchCurrentUser entirely and consume `currentUser` from `useAuth()` in AuthContext (that is the whole point of the migration — AuthContext already calls /auth/me on mount via cookie).",
+        "selector": "/admin route, body shows only 'Made with Emergent' marker",
+        "priority": "CRITICAL"
+      }
+    ],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_cookie_auth.py",
+    "/app/test_reports/pytest/cookie_auth.xml"
+  ],
+  "action_items": [
+    "FIX (critical, single-file): /app/frontend/src/pages/AdminDashboard.js lines 57-83 — TDZ on fetchCurrentUser. Either move the useCallback above the useEffect, or remove the local /auth/me call entirely and use `const { currentUser } = useAuth()` from AuthContext (consistent with the rest of the migration). Currently /admin = blank white page.",
+    "(optional) Consider that ingress strips/rewrites CORS headers — preview env is same-origin so it's not currently blocking anything, but if any 3rd-party domain ever calls this backend, the `Allow-Origin: *` + `Allow-Credentials: true` combination will be rejected by browsers. FastAPI is correctly configured; this is an infra-layer rewrite.",
+    "(optional) Wrap AdminDashboard (and ideally the whole app router outlet) in an ErrorBoundary so future component crashes don't blank the entire page."
+  ],
+  "critical_code_review_comments": [
+    "AdminDashboard.js has the TDZ regression described above — single biggest issue from this migration.",
+    "AdminDashboard.js still does its OWN axios call to /api/auth/me on mount (line 75-83) even though AuthContext already exposes the current user. After the cookie migration this is redundant and was the root cause of the TDZ bug. The fix should consume AuthContext, not just re-order declarations.",
+    "AdminDashboard.js is 1515 lines — exceeds the 700-line guideline; should be split into AdminApplications / AdminUsers / AdminIpBans / AdminDbStatus subcomponents.",
+    "No global ErrorBoundary — a single component throwing blanks the entire app shell (navbar disappears on /admin)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_cookie_auth.py (new — 14 tests covering cookie login, /me cookie+bearer+anonymous, protected routes via cookie, logout, CORS preflight at localhost+public)"
+  ],
+  "success_rate": {
+    "backend": "100% (14/14 pytest passed)",
+    "frontend": "89% (8/9 e2e flows passed — only /admin route broken)"
+  },
+  "test_credentials": "Admin: craftnn1222@gmail.com / admin123 (from /app/memory/test_credentials.md, verified working).",
+  "seed_data_creation": "None.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Backend cookie auth is solid — all 14 pytest cases pass: httpOnly+Secure+SameSite=Lax cookie set on login, /me works via cookie alone, Bearer fallback works, anonymous /me returns 401 with detail 'Not authenticated', logout clears cookie (Max-Age=0), protected routes /api/characters /api/admin/applications /api/wallet /api/quests/my-quests/accepted all accessible via cookie only. CORS at FastAPI level is correct (verified localhost:8001); the public ingress rewrites it but that only affects cross-origin which isn't in use. Frontend: login, dashboard render (Welcome back Ausar Veltraus), session persistence on reload, /characters and /quests load, anonymous /dashboard redirects to /login, logout clears cookie + bounces — all working. THE ONLY ISSUE is the TDZ in AdminDashboard.js making /admin blank. After main agent fixes that, re-run the /admin Playwright check.",
+  "rca of the issue": "AdminDashboard.js (modified during the cookie migration to drop the manual Authorization header) ended up with `useEffect(() => fetchCurrentUser(), [fetchCurrentUser])` at line 57 referencing a `const fetchCurrentUser = useCallback(...)` declared at line 75. const/let bindings are in the TDZ until their declaration runs; React evaluates the dep array synchronously during render, which happens before the body's later const initializer executes. So on first render the useEffect's dep array dereferences `fetchCurrentUser` → ReferenceError → component crashes → React unmounts the subtree → blank screen. Mitigation: (1) hoist the useCallback above the useEffect; (2) better — remove the local fetch entirely and use `const { currentUser } = useAuth()` from AuthContext, which already does this work centrally per the migration spec. Reproduction: navigate to https://npc-economy-preview.preview.emergentagent.com/admin while logged in → page is blank, console shows 'Cannot access fetchCurrentUser before initialization'."
+}

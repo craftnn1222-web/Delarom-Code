@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Continents of Delarom pre-commit hook (managed by Husky).
+#
+# This hook runs TWO things, in order:
+#   1) The platform-provided large-file guard (was at .git/hooks/pre-commit).
+#      Files over 90 MB are auto-gitignored to avoid bloating the repo.
+#   2) `lint-staged` over the frontend, which runs `eslint --fix --max-warnings=0`
+#      on staged `src/**/*.{js,jsx}` files. Auto-fixable issues are applied
+#      and re-staged; both ESLint errors (e.g. `react-hooks/exhaustive-deps`)
+#      and warnings (e.g. `no-unused-vars`) will block the commit.
+#
+# To skip this hook in an emergency: `git commit --no-verify`.
+
+set -e
+
+# ──────────── 1. Large-file guard (preserved from platform default) ────────────
+SIZE_THRESHOLD=90M
+large_files=$(find . -not -path "./.git/*" -size +${SIZE_THRESHOLD} 2>/dev/null | sed 's|^\./||')
+if [ -n "$large_files" ]; then
+  for file in $large_files; do
+    grep -q "^$file$" .gitignore 2>/dev/null || echo "$file" >> .gitignore
+    git rm --cached --ignore-unmatch "$file" >/dev/null 2>&1 || true
+  done
+  git add .gitignore || true
+fi
+
+# ──────────── 2. Frontend lint-staged (blocks on ESLint errors) ────────────
+# Resolve repo root then cd to /frontend where node_modules + lint-staged live.
+REPO_ROOT="$(git rev-parse --show-toplevel)"
+if [ -d "$REPO_ROOT/frontend" ] && [ -f "$REPO_ROOT/frontend/package.json" ]; then
+  cd "$REPO_ROOT/frontend"
+  # Run lint-staged only if the dep is actually installed (skips silently
+  # in environments that haven't yet run `yarn install`).
+  if [ -x "node_modules/.bin/lint-staged" ]; then
+    node_modules/.bin/lint-staged
+  fi
+fi
+
+exit 0

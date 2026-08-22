@@ -1,0 +1,52 @@
+{
+  "summary": "P2 Faction Membership Round 2 verification (iteration 14). Backend: 14/15 pytest pass in /app/backend/tests/test_factions_round2.py covering reputation init (5 rows in NATIONS order, score=0), admin grant + history, +1000/-1000 clamps, admin-only grant (non-admin 403), threads access control (public list strips content, full thread requires auth, non-member 403 with 'members only', member 200 with full body, admin override), thread+reply membership gating, replies_count auto-increment, and admin seed-leaders (rank=leader + leader_character_id set + appears in members list). One CRITICAL law-hook test fails — see backend_issues.critical. Frontend: Playwright verified faction-tabs strip (roster default + threads + reputation), reputation tab shows all 5 nation rows with rep-row-<nation> and rep-score-<nation> testids (Aigraels +250 / others 0 from prior test grants on Ardent Legion), reputation-history-section renders 'Recent Shifts' with the +250 grant, threads list shows 3 thread-row entries and clicking opens faction-thread-detail. Admin override on detail view confirmed (full content visible even when not a member).",
+  "backend_issues": {
+    "critical": [
+      {
+        "endpoint": "POST /api/factions/<slug>/reputation (via law_service.record_crime)",
+        "issue": "Severity vocabulary mismatch: law_service.SEVERITY_TIERS = {petty, minor, major, capital, regicide} but factions.REPUTATION_CRIME_DELTA = {minor, moderate, major, grievous, regicide}. Calling record_crime(severity='moderate') normalizes severity to 'minor' at law_service.py:191 BEFORE the apply_crime_to_faction hook runs, so reputation moves by -5 instead of the PRD-required -15. Same problem hides 'grievous' (-150) entirely. Only 'minor', 'major', and 'regicide' pass through both vocabularies. PRD's flagship 'moderate=-15' integration is unreachable through the real Law flow.",
+        "priority": "CRITICAL"
+      }
+    ],
+    "minor": [
+      {
+        "endpoint": "POST /api/auth/register",
+        "issue": "Requires application_text + admin approval, so test cannot self-provision a non-admin via HTTP. Workaround: I seeded rep_tester_round2@delarom.com / Testpass123! directly in Mongo with bcrypt + status='active'. Documented in /app/memory/test_credentials.md so future runs don't re-seed."
+      }
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_factions_round2.py",
+    "/app/test_reports/pytest/factions_round2.xml"
+  ],
+  "action_items": [
+    "[CRITICAL] Align severity taxonomies between law_service.SEVERITY_TIERS and factions.REPUTATION_CRIME_DELTA. Either (a) add 'moderate' and 'grievous' to law_service.SEVERITY_TIERS with bounty defaults, or (b) change factions.REPUTATION_CRIME_DELTA keys to law's vocabulary ({petty, minor, major, capital, regicide}) and update the PRD's expected -15 value. Without this fix, the headline Round 2 integration (Law -> Reputation) silently degrades 3 out of 5 PRD severities."
+  ],
+  "critical_code_review_comments": [
+    "routes/factions.py:39-45 — REPUTATION_CRIME_DELTA introduces vocab 'moderate' and 'grievous' that have no counterpart in law_service.SEVERITY_TIERS. This is the root cause of the failing PRD test. Either taxonomies must be reconciled, OR factions.apply_crime_to_faction should map severities (e.g. law 'minor'->rep 'moderate' if intent is to keep two scales) — but the current silent fallback to 'minor' (-5) makes the hook misbehave for most law severities.",
+    "routes/factions.py:_get_or_init_reputation correctly returns rows in NATIONS order with score=0 even before any activity — verified.",
+    "routes/factions.py threads peek correctly excludes 'content' from list responses (verified at runtime: list rows have title/replies_count but no content key). Full-fetch GET correctly enforces 401 (no cookie), 403 (member-not-in-faction), 200 (member), 200 (admin override).",
+    "routes/factions.py admin/seed-leaders endpoint is idempotent: sets rank=leader, rank_index=3, leader_character_id on faction doc — confirmed via members list + faction detail.",
+    "law_service.py:190-191 — silent severity normalization ('moderate' -> 'minor') is the actual code path that breaks the PRD test. Worth a log.warning at minimum so similar drift is visible.",
+    "MINOR: routes/factions.py thread POST validates title min_length=2 — fine, but the PRD test case sending title='x' got a 422 instead of the 403 we wanted; tests updated to use valid title to exercise the membership gate."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_factions_round2.py (NEW — 15 tests, 5 classes, ~390 lines)",
+    "/app/memory/test_credentials.md (added rep_tester_round2@delarom.com / Testpass123! note)"
+  ],
+  "success_rate": {
+    "backend": "93% (14/15 — 1 CRITICAL fail = severity vocab mismatch)",
+    "frontend": "100% on the in-scope tab/reputation/threads selectors (admin flow)"
+  },
+  "test_credentials": "Admin: craftnn1222@gmail.com / admin123. Non-admin (seeded for Round 2): rep_tester_round2@delarom.com / Testpass123! (status=active, role=member, no characters).",
+  "seed_data_creation": "Seeded one non-admin user directly in Mongo (rep_tester_round2). All test memberships are force-cleaned via _force_leave at the start of each stateful test; reputation rows for forgemasters-guild and loremasters-guild are wiped via _reset_reputation; replies/threads created during the test remain (3 TEST threads on Ardent Legion, ~1 reply, ~250-rep Aigraels honor on Ardent Legion). These are intentionally left as visible artifacts for the frontend playwright verification — main agent may purge if desired.",
+  "retest_needed": true,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All test infra (motor _run_db helper, _force_leave, _reset_reputation, admin_chars/admin_session/nonadmin_session fixtures) is in /app/backend/tests/test_factions_round2.py. After main agent fixes the severity-vocab issue, re-run only TestLawCrimeHook::test_character_crime_cascades_moderate_then_major. Round 1 (test_factions.py) still passes 10/10 — Round 2 added routes without regressions. The non-admin seed user persists across runs.",
+  "rca of the issue": "Two independent severity enums were introduced in different modules without a shared source of truth: law_service.py defines {petty, minor, major, capital, regicide} for bounty/sentence purposes; routes/factions.py introduced {minor, moderate, major, grievous, regicide} for reputation delta. The hook at law_service.py:223-228 forwards `severity` to apply_crime_to_faction AFTER line 190-191 silently coerces unknown values to 'minor'. So when the PRD asks for severity='moderate' end-to-end, the hook sees 'minor' and produces -5 instead of -15. Mitigation options: (1) Pick ONE taxonomy across both modules. (2) Add an explicit law-to-rep severity map in factions.apply_crime_to_faction. (3) Drop the silent normalization in law_service and propagate the original severity through to the hook (riskier — breaks bounty math)."
+}

@@ -1,0 +1,31 @@
+{
+  "summary": "P1.5 Diplomacy→Economy hook + Markets drilldown backend verification. Ran all 6 new tests in test_economy_diplomacy_hook.py (all pass) plus full 73-test regression across economy, economy_p1, courtroom, law_jail_overhaul, t1_guard (all pass). Live-API smoke-tested GET /api/economy/goods/iron-ingots: returns decorated `suppliers` (faction_name/faction_nation/faction_color/faction_icon) AND new `markets` field (city_slug, city_name, nation, import_price, source_faction_slug, sorted ascending by import_price). Verified 404 on unknown good. Confirmed both hook invocation paths are wired: (a) _auto_escalate_rivalries_for_crime in _factions_lib.py L375, (b) escalate_rivalry route in factions.py L1317. Markets filter excludes is_available=false rows.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_economy_diplomacy_hook.py",
+    "/app/test_reports/pytest/iter21_diplomacy_hook.xml",
+    "/app/test_reports/pytest/iter21_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes/factions.py is 1410 lines — past the 700-line guidance; consider further extraction (rivalry/quest/treasury submodules already partly extracted into _factions_lib.py, but the routes file itself is still long).",
+    "Hostility-break helper swallows ALL exceptions with a warning log — fine for fail-soft economy bridge, but consider narrowing the except to ImportError/AttributeError so genuine DB bugs aren't silently masked.",
+    "Inline `from economy_service import EconomyService` inside the helper (line 410) is intentional to dodge circular imports — fine, but worth a one-line code comment explaining why a top-level import was avoided."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "not tested (skipped per request)"},
+  "test_credentials": "Used from request (admin: craftnn1222@gmail.com / admin123). Not exercised in this iteration — helper tests run directly against EconomyService + FakeDB, and live curl was unauthenticated GET on public economy endpoint.",
+  "seed_data_creation": "None — tests use FakeDB stub from test_law_jail_overhaul and seed_canonical_goods/seed_starter_specialties in-memory.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "All P1.5 acceptance criteria met. 73 backend tests green. Live API for GET /api/economy/goods/{slug} verified for iron-ingots (returns 1 supplier + 1 market) and rune-scrolls (1 supplier, 0 markets). Frontend drilldown at /markets/:goodSlug NOT tested per request scope.",
+  "rca of the issue": "N/A — no issues found."
+}

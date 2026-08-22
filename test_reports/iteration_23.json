@@ -1,0 +1,33 @@
+{
+  "summary": "Backend-only verification of the server-side auto-continue city/location image batcher plus prayer/Tongue-of-Y'ros regression. 8/8 pytest cases pass in the final run. Cities are now 163/163 with real base64 PNG artwork (sample: Vargath, 2.7MB data:image/png payload). Locations grew 805 -> 827 with-image during testing; survey total_missing dropped 839 -> 817 with 25 generated / 0 failed in the current run and last_error=null — the model_access_denied 25/25-failure pattern is gone. IMPORTANT: my first run found the batch DEAD (is_running=false, all counters zeroed) because uvicorn --reload watches /app/backend recursively and my writing of /app/backend/tests/test_image_batch.py triggered a WatchFiles reload which silently killed the in-memory asyncio batch task and wiped _JOB_STATE. I re-kicked POST /api/admin/image-batch/generate?auto_continue=true to restore the intended state; it is running now and was left running (no stop call).",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "/api/admin/image-batch/*", "issue": "Batch job state and the runner task are process-local in-memory only. ANY backend hot reload (any .py edit, including test files under /app/backend/tests) or supervisor restart silently kills the batch mid-run and resets generated/failed/started_at/stopped_reason to zero — no record that it ever ran, no auto-resume. Reproduced: batch was killed by a WatchFiles reload at 14:46 and status returned an all-null snapshot. Fix: persist job state in a Mongo doc, mark abandoned runs, and auto-resume on startup (or add a startup hook that re-kicks if unfinished work remains). Also exclude tests/ from the reload watch dir.", "priority": "CRITICAL"},
+      {"endpoint": "/api/admin/image-batch/survey + generate_batch_sync", "issue": "MONEY-BURN latent bug: the missing-image query only looks at image_url ($or null/''/absent), but ImageService.ensure_migrated (hit by GET /api/city-image/{nation}/{slug} and other read paths) moves the blob to image_blobs and $unset's image_url. Any entity whose image is viewed after generation reverts to 'missing' and will be regenerated at ~$0.04 each, so the backlog can never converge to 0. Currently image_id_but_no_url = 0 for both collections (7 cities have both fields), so no waste yet, but this will trigger as users browse. Fix: exclude docs where image_id exists in both survey() and generate_batch_sync() selection queries.", "priority": "HIGH"}
+    ],
+    "minor": [
+      {"endpoint": "/api/admin/image-batch/status|survey", "issue": "High latency while the batcher runs (individual admin GETs occasionally take 10-60s; full 8-test run took 391s). gpt-image-1 base64 decode/insert work hogs the event loop. Retries were needed. Consider offloading generation to a worker/threadpool."},
+      {"endpoint": "auto-continue loop", "issue": "MAX_ITERATIONS=60 x batch 25 = 1500 items per kick-off; sufficient for the remaining 817, but a kick-off with a larger backlog would silently stop with 'Hit MAX_ITERATIONS' and no notification/auto re-kick."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": ["/app/backend/tests/test_image_batch.py", "/app/backend/tests/db_image_spotcheck.py", "/app/test_reports/pytest/image_batch_results.xml"],
+  "action_items": [
+    "Persist image-batch job state in Mongo and auto-resume after restart/hot-reload; the batch currently dies on any backend file edit.",
+    "Make survey()/batch selection treat image_id as 'has image' so migrated entities are not regenerated (avoids repeat $0.04 charges and a never-ending backlog).",
+    "Avoid editing backend .py files while the batch runs (it will kill the run); re-check status after any deploy."
+  ],
+  "critical_code_review_comments": [
+    "city_location_image_batcher.py: survey() and generate_batch_sync() must add {'image_id': {'$in': [None, '']}} / $exists:false to the missing filter to stay consistent with ImageService's lazy migration that $unsets image_url.",
+    "Batcher writes only image_url (multi-MB base64) into parent docs; prefer writing directly via ImageService.store_bytes + image_id to avoid bloating city/location documents and the later migration churn.",
+    "_JOB_STATE is a module-level singleton with no persistence and asyncio.create_task with no task reference — task can be GC'd/cancelled on reload without any trace."
+  ],
+  "updated_files": ["/app/backend/tests/test_image_batch.py", "/app/backend/tests/db_image_spotcheck.py"],
+  "success_rate": {"backend": "100% (8/8 after re-kick; 5/8 on first run because the batch had been killed by a hot reload)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "None — read-only verification plus one re-kick of the existing batch job.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin craftnn1222@gmail.com / admin123 (login returns access_token; Bearer header)",
+  "context_for_next_testing_agent": "Batch was RUNNING and left running at hand-off (started_at 2026-08-21T14:47:56Z, generated 25, failed 0, iterations_run 1, locations survey_missing 817). Do NOT write/edit any file under /app/backend while a batch is running — uvicorn --reload will kill it. Use /tmp scripts for ad-hoc checks. Regression endpoints /api/prayers/gods (4 gods: Seren, Y'ros, Uesis, Ehena) and /api/tongue-of-yros/state both return 200 under load. Use /app/backend/tests/db_image_spotcheck.py for DB counts (it also reports the image_id-without-image_url regen-risk counter).",
+  "rca_of_the_issue": "Original bug (missing artwork) is genuinely fixed: gpt-image-1 access is restored (0 failures, last_error null) and real 2.7MB base64 PNGs are persisted; all 163 cities and 827/1644 locations now have artwork. The residual risk is durability, not generation: the batcher's job state and runner task live only in the uvicorn process, so a hot reload (triggered by any backend file write, as happened during this test session) kills the run with no persistence or resume — which is very likely why the user perceived the backlog as never finishing across sessions. Secondly, ImageService.ensure_migrated $unsets image_url while the batcher's 'missing' query keys solely on image_url, so viewed entities re-enter the queue and get regenerated, preventing convergence and wasting credits."
+}

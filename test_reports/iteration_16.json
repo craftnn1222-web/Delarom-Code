@@ -1,0 +1,36 @@
+{
+  "summary": "Phase A (Visibility) + Phase B (Charter System) + Phase C (Living NPC Roster) full-suite review. Backend: 63/63 pytest PASS (52 existing factions/charters/round2/round3/prompt-injection + 11 new Phase A visibility endpoint tests). Frontend: end-to-end smoke on the public preview URL with 0 console errors and 0 pageerrors. Charter dialog opens with correct insufficient-funds warning, FactionDetail page now has 6 tabs including Lifeblood (empty-state copy renders correctly for starter factions), Admin dashboard has new Charters tab with status filter, all expected UI elements present.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_factions_phaseA_visibility.py",
+    "/app/backend/tests/test_factions_charters.py",
+    "/app/backend/tests/test_factions.py",
+    "/app/backend/tests/test_factions_round2.py",
+    "/app/backend/tests/test_factions_round3.py",
+    "/app/backend/tests/test_faction_prompt_injection.py",
+    "/app/test_reports/pytest/iter16_charters.xml",
+    "/app/test_reports/pytest/iter16_phaseA.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes/factions.py is now ~1700+ lines (Phase A endpoints near 437-475, Phase B charter near 800-1160, Phase C tick/npcs near 1600+). It is well over the 700-line soft cap. Consider splitting into factions_charters.py + factions_npcs_routes.py + factions_visibility.py once feature pace slows.",
+    "faction_npcs.tick_faction throttle is implemented via a single `factions.npc_tick_at` timestamp. Two simultaneous /tick calls within the same millisecond would both pass the throttle check (a tiny race). Low-impact since tick is idempotent + best-effort, but worth tightening with $setOnInsert or a DB-level lock if NPC roster size grows.",
+    "Public POST /api/factions/{slug}/tick has no rate-limit beyond the 6h self-throttle — a hostile caller could not actually cause work (throttled) but could still cause one DB read per request. Consider adding lightweight per-IP throttling at the gateway.",
+    "Frontend FactionBadge renders nothing on null. That is correct per spec, but it also means the Dashboard/Characters smoke test cannot distinguish 'no characters in factions' from 'badge component broken'. Suggest adding `data-testid=\"character-faction-badge-slot-${characterId}\"` on the slot wrapper so tests can assert presence-of-slot even when faction is null."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_factions_phaseA_visibility.py (NEW — 11 tests for the 5 new visibility endpoints: GET /characters/{id}/faction, POST /characters/factions/batch, GET /factions/{slug}/npcs, GET /factions/charter/mine, GET /admin/factions/charters)"
+  ],
+  "success_rate": {"backend": "100% (63/63)", "frontend": "100% smoke"},
+  "test_credentials": "Admin: craftnn1222@gmail.com / admin123 (used). Charter-flow visual verified — dialog correctly blocks submit when wallet < 5000g.",
+  "seed_data_creation": "None this iteration. Iteration_15 force-left admin's Ausar Veltraus from forgemasters-guild, so the guild now reads '0 members' — this is the correct state for fresh charter testing. The 11 Phase A pytest tests do not mutate data.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase A/B/C is complete and stable. Backend 63/63 pytest, frontend 0 console errors. All 5 new Phase A endpoints have explicit auth + happy-path coverage in test_factions_phaseA_visibility.py. Charter lifecycle (file/approve-with-NPC-seed/reject-with-refund), lazy/admin tick, and the NPC-pays-treasury invariant are all guarded by test_factions_charters.py (8 tests). When running pytest, export REACT_APP_BACKEND_URL=https://npc-economy-preview.preview.emergentagent.com first (the conftest does not auto-load /app/frontend/.env). To visually retest the Lifeblood tab with actual NPCs, file + approve a fresh charter via the UI (admin needs ≥5000g; currently admin has 1200g — top up wallet first or use the API directly).",
+  "rca of the issue": "No issues. All Phase A visibility endpoints return the documented shape (dict or null for single, dict-keyed-by-id for batch), Phase B charter endpoints enforce the documented preconditions (5000g up-front, no double-charter, slug auto-gen, refund on reject, NPC seed soft-fail on approve), Phase C tick endpoints respect the 6h throttle (lazy) / bypass throttle (admin) and the gold-into-treasury-not-user invariant. Frontend gating, banners, and tabs render per spec."
+}

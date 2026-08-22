@@ -1,0 +1,36 @@
+{
+  "summary": "P2 Faction Membership Round-1 verification (iteration 13). Backend: 10/10 pytest tests pass in /app/backend/tests/test_factions.py — covers public reads (list, detail, members, ranks, 404), auth-gated my-membership, join (rank=initiate, rank_index=0, status=active), duplicate-faction 409, member_count auto-refresh, leave (returns {ok, left:<name>}), leave-when-not-member 404, full promote/demote ladder with authorization edges (initiate cannot manage initiate → 403, equal-rank promote → 403, promote-past-officer → 409 'requires a leadership transfer', demote-at-initiate → 409 'cannot be demoted further', leader cannot leave → 409 'cannot abandon'), and leader-only expel. Frontend: end-to-end Playwright flow with admin login → navbar nav-factions click → /factions grid with all 6 expected faction cards (faction-card-<slug>) → click Ardent Legion card → detail page renders with wrapper / name / motto / description testids → open join modal → select character → fill pitch → submit → my-stake-section appears with member-row-<char_id> and leave-faction-<char_id> testids → returning to /factions shows my-factions-banner and my-faction-pill-ardent-legion → navigate back to detail and click leave (window.confirm auto-accepted) → my-stake-section hidden and member row removed.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_factions.py",
+    "/app/test_reports/pytest/factions.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes/factions.py: clean separation — public reads vs auth-gated joins vs officer/leader-gated rank actions. _can_manage(actor, target) helper correctly enforces actor_rank >= 'officer' AND actor_rank_index > target_rank_index, which gives the 'downward only' semantic specified.",
+    "routes/factions.py: member_count is refreshed via _refresh_member_count(db, faction_id) on every join/leave/expel — derived count stays consistent with active memberships (verified via test asserting GET /factions/<slug> after join shows member_count>=1).",
+    "routes/factions.py: ObjectId never leaks — every find_one/find call uses projection {'_id': 0}. ✓",
+    "routes/factions.py: forward-compat fields (rank_index, reputation_contribution, leader_character_id, is_secret) are persisted but unused in Round 1, matching the heavy-scope plan. Route file is ~360 lines and reads naturally with section headers.",
+    "seed_factions.py: idempotent — re-running updates copy without disturbing memberships or founded_at. Six starter factions match the world lore (3 Aigraels + 3 Dhor Khuldor). Ran without modification during testing.",
+    "Frontend /factions and /factions/:slug: data-testid coverage is complete and consistent with the request spec (nav-factions, faction-grid, faction-card-<slug>, faction-detail-<slug>, faction-name, faction-motto, faction-description, join-faction-btn, join-faction-form, join-character-select, join-pitch-input, join-submit-btn, my-stake-section, member-row-<id>, leave-faction-<id>, my-factions-banner, my-faction-pill-<slug>). Allowed me to write a fully selector-driven Playwright test with zero text-based fallbacks.",
+    "MINOR (informational, not blocking): The /factions/{slug}/leave endpoint reuses JoinFactionBody (so the request body accepts an unused 'pitch' field). Not a functional bug — Pydantic ignores the extra check and the route doc-string flags it — but a tiny dedicated LeaveFactionBody would be cleaner."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_factions.py (NEW — 10 tests, 3 classes, ~290 lines: TestFactionPublicReads, TestMyMembership, TestJoinLeaveFlow, TestRankChanges; uses isolated motor client per DB-touch to avoid cross-loop futures; force-cleans active memberships at the start of each stateful test for re-runnability)"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% (all selectors found, full join→banner→leave loop verified)"},
+  "test_credentials": "Admin: craftnn1222@gmail.com / admin123 (from /app/memory/test_credentials.md, 9 characters available — used 3 in the rank-changes test).",
+  "seed_data_creation": "Tests reuse the 6 seeded factions. Memberships are created during tests under admin's real characters and marked status='left' (or expelled) at teardown; member_count is refreshed so the seed remains clean for the next run. No new factions or characters were created.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Round 1 of P2 Faction Membership is solid. Backend tests live in /app/backend/tests/test_factions.py and the suite is fully idempotent (force-cleans active memberships via direct Mongo at the start of each stateful test). When Round 2 (forum threads) and Round 3 (reputation / faction quests / F-vs-F rivalry) land, extend this file rather than re-writing — the rank-change ladder helpers (_run_db + admin_chars fixture) make adding officer/leader scenarios cheap. Note: leave endpoint reuses JoinFactionBody; if main agent splits that into LeaveFactionBody later, update test bodies accordingly. No retest needed.",
+  "rca of the issue": "N/A — no defects found in Round 1."
+}

@@ -1,0 +1,37 @@
+{
+  "summary": "P1/P2 refactor verification (iteration 12). Backend: law_service.record_crime refactor verified via new test_law_refactor.py — both _resolve_perpetrator and _build_crime_doc helpers pass unit + integration tests for character and NPC perpetrator paths (9/9). Existing law_system regression (TestLawFeatureFlag + TestAdminLawEndpoints) still passes (4/4). create_admin.py smoke run printed expected '✅ updated to ADMIN with ACTIVE status' message and exited 0. Frontend: /admin renders cleanly (body ~5830 chars on Database tab) with all 6 tabs working — Applications (10 cards w/ approve/reject testids), Users (73 rows + 73 view + 73 reset-password testids), IP Bans (add-ip-ban-btn + ip-bans-empty visible), RP Locations (1000 cards rendered — REFACTOR BUG-FIX CONFIRMED, was previously empty), Database (status block + seed btn + images toggle). T1 Tutorial → Practice Arena renders with practice-arena/practice-input/practice-submit-btn testids; 7 progress dots visible; submit-btn correctly disabled with empty input + enabled after text; POST /api/t1/judge-action returns 200 and result card 'Excellent! T1 Compliant Response!' with feedback renders.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Admin → RP Locations tab", "issues": ["React duplicate-key warnings in console for ~35 locations. Keys appear to be derived from <city>-<location-name> which collides because the same template-named locations (e.g., 'ancient-market-square', 'crystal-market-square', 'pelor-temple', 'seren-temple') are seeded across many nations. Suggest using location.id (uuid) as React key instead of name-based slug. Not blocking — list renders correctly, just noisy console."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_law_refactor.py",
+    "/app/test_reports/pytest/law_refactor.xml",
+    "/app/test_reports/pytest/law_system_refactor.xml"
+  ],
+  "action_items": [
+    "OPTIONAL (low priority): Switch RP Locations card React key from `${city}-${locName}` to `location.id` to silence duplicate-key console warnings (~35 collisions visible)."
+  ],
+  "critical_code_review_comments": [
+    "law_service.record_crime refactor is clean — _resolve_perpetrator centralises the type/id/name normalisation and _build_crime_doc keeps the document schema in one spot. Public signature unchanged. Both perpetrator paths verified end-to-end against Mongo.",
+    "create_admin.py 5-helper split (_read_admin_env, _promote_existing, _insert_new_admin, _print_summary, _utcnow_iso) makes the script much more readable; idempotency preserved (existing admin → updated, exit 0).",
+    "AdminDashboard.js misnested /api/locations fetch bug fix is verified — RP Locations tab now correctly shows 1000 cards (previously rendered empty unless applications fetch threw)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_law_refactor.py (new — 9 tests covering _resolve_perpetrator + _build_crime_doc + end-to-end record_crime for both perpetrator types)"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin: craftnn1222@gmail.com / admin123 (from /app/memory/test_credentials.md). Login + admin route + T1 tutorial all accessible.",
+  "seed_data_creation": "Tests use TEST_ prefixed character/NPC IDs and clean up crime + bounty docs after each integration test.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Refactor pass cleanly verified — no behavioural regressions in record_crime, create_admin, AdminDashboard or T1PracticeArena. Only loose end is the React duplicate-key warning on RP Locations (cosmetic). For next iteration, if main agent fixes the key collision, re-running this same /admin → RP Locations tab flow and checking console should yield zero key warnings.",
+  "rca of the issue": "RP Locations duplicate React key warnings: location seed data contains template names (e.g., 'Ancient Market Square', 'Pelor Temple') replicated across many cities/nations. AdminDashboard's LocationsTab uses a name-derived slug as key (e.g., `${city}-${locName}`) which collides when (city, location-name) pairs repeat. Mitigation: pass `location.id` (uuid present in payload) as the React key."
+}

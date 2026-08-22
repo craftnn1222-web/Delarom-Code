@@ -1,0 +1,56 @@
+{
+  "summary": "Full regression of the new Public Bounty Board surface (anonymous read, nation filtering, NPC perpetrator visibility, character petty/minor hiding), NPC hunting payout (claim_npc_bounty), and a smoke pass on all previously-shipped law / companions / image / chronicle endpoints. New pytest file `test_bounty_board.py` (13/13 PASS) plus re-run of existing `test_law_system.py` (17/17 PASS) = 30/30 backend. Frontend /bounties verified anonymously and while authenticated, nation filter pills re-fetch correctly with proper cross-nation isolation, nav-bounties link routes to /bounties.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "/bounties — BountyCard 'major' severity tint",
+        "issues": [
+          "BountyCard for worst_severity='major' uses bg-red-900/15 + text-red-100 — at 15% bg opacity the card body and labels (perpetrator name, '1 open crime', and even the amount) are visibly washed out on the dark gradient. The capital/regicide tints (rose-900/20, fuchsia-900/30) read fine. Suggest bumping the major tint to bg-red-900/25 or strengthening text to text-red-50 for readability parity. See SEVERITY_TINT in /app/frontend/src/pages/BountyBoard.js line 11–17."
+        ]
+      },
+      {
+        "screen": "/bounties — filter pill non-selected state",
+        "issues": [
+          "Non-selected nation pills use text-gray-400 on bg-black/30 with a border-gray-600/30 — labels like 'Dhor Khuldor' and 'Veiled Realms' are low-contrast and difficult to scan; consider text-gray-300 minimum."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_bounty_board.py",
+    "/app/backend/tests/test_law_system.py",
+    "/app/test_reports/pytest/bounty_board.xml",
+    "/app/test_reports/pytest/law_system.xml"
+  ],
+  "action_items": [
+    "Bump 'major' severity tint contrast on the bounty board cards (BountyBoard.js SEVERITY_TINT).",
+    "Raise non-selected filter pill text color from gray-400 to gray-300 for readability."
+  ],
+  "critical_code_review_comments": [
+    "law_service.py get_bounty_board() hides character bounties with worst_severity in ('petty','minor') by relying on the documented visibility list ['major','capital','regicide']. This is correct per the spec, but it depends entirely on the worst_severity field being kept in sync by _refresh_bounty. If a future refactor adds a new severity tier (e.g., 'misdemeanor'), the visibility filter and the propagation in _refresh_bounty 'order' constant would need to be updated together — they live in separate places (lines 267 and 341). Consider centralising the SEVERITY_TIERS / public_severities definitions.",
+    "server.py /api/bounty-board has no rate limit and no Cache-Control headers; since it is fully public it would be a cheap DoS target. Recommend adding a short-TTL cache (e.g., Cache-Control: public, max-age=15) and per-IP rate limit.",
+    "claim_npc_bounty() is idempotent by virtue of 'status=open' filter, but the return type does not distinguish 'first claim' vs 'already claimed' (total_payout==0 in both 'never had crimes' and 'already claimed' cases). Consider returning crimes_closed==0 + an explicit already_claimed flag so the AI/UI can distinguish 'this NPC was never wanted' from 'someone else claimed first'.",
+    "server.py is now 4710 lines — modularisation overdue (law, image, admin, bounty routers each in their own file).",
+    "BountyBoard.js fetches with api.get('/bounty-board') — confirm this client strips/keeps the right base url; current behaviour works because api util prepends REACT_APP_BACKEND_URL+'/api'. Good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_bounty_board.py (new)",
+    "/app/backend/tests/_ui_bounty_seed.py (new — small seed helper used during UI test, retained for re-use)"
+  ],
+  "success_rate": {
+    "backend": "100% (30/30 across both test files)",
+    "frontend": "100% on tested flows (anonymous /bounties load, nation filter pills, cross-nation isolation, nav-bounties link, auth-aware navigation)"
+  },
+  "test_credentials": "Admin: craftnn1222@gmail.com / admin123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "Module-scoped pytest fixture in test_bounty_board.py seeds two NPC crimes (`npc-amme-TEST_BB_*` minor in ammeonon, `npc-seli-TEST_BB_*` major in selindori) directly via LawService.record_crime, cleaned up in fixture teardown. A separate helper `_ui_bounty_seed.py` was used for the live UI run (npc-ui-amme, npc-ui-seli) and cleaned up after — verified zero leftover via mongo delete_many filtered on TEST_BB tag. No leftover state.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Run: pytest /app/backend/tests/test_bounty_board.py /app/backend/tests/test_law_system.py -v --junitxml=/app/test_reports/pytest/all.xml. Both files self-clean their seeded crimes/bounties; the test_bounty_board fixture is module-scoped autouse. For the live UI run use `python /app/backend/tests/_ui_bounty_seed.py seed` then `... clean`. Note: previous iteration_5 already covered the law system; the new surface added here is the public /api/bounty-board endpoint, NPC perpetrator visibility, claim_npc_bounty payout, and the /bounties React page with its filter pills. Cache-Control nit on /api/image/{id} from iteration_5 is still pending and out of scope (Cloudflare overrides pod headers).",
+  "rca of the issue": "N/A — no blocking bugs found. The two design issues are cosmetic (severity card contrast and filter pill non-selected state) and do not block functionality."
+}

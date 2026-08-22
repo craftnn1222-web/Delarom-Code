@@ -1,0 +1,40 @@
+{
+  "summary": "Verified all P1 economy extensions end-to-end. All 10 unit tests in test_economy_p1.py pass (auto_price helper, charter offered_goods Pydantic, caravan Pydantic + state machine). Full 67-test backend regression (test_economy.py + test_economy_p1.py + test_courtroom.py + test_law_jail_overhaul.py + test_t1_guard.py) green. Wrote a new 13-test live-API smoke suite (test_economy_p1_live_api.py) hitting the public ingress — all 13 pass. Confirmed via live curl that iron-ingots in astra-lun has import_price=50 (matching review's 40g base * 1.25 tariff cascade), so an auto-priced item with 30% markup correctly yields 65g retail. Auto-pricing wiring on POST /api/shops/{id}/items works end-to-end; refresh-price returns 400 for non-auto items; bulk refresh-prices returns the expected {updated, skipped, total_auto_priced} envelope; auto-priced item with no contract returns 400. Caravan lifecycle (post → claim → complete success) credits the claimer's wallet (net delta verified == 0 for same-user round-trip; debit on post + credit on complete cancels out). Cancel refunds the poster. Double-claim returns 400, cancel-on-completed returns 400, unauth POST returns 401/403, unknown good returns 400/404. Faction contracts list is public; URL/body slug mismatch returns 400. Charter with an invalid offered_good slug returns 400/404 BEFORE debit.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_economy_p1.py",
+    "/app/backend/tests/test_economy_p1_live_api.py",
+    "/app/test_reports/pytest/iter20_economy_p1.xml",
+    "/app/test_reports/pytest/iter20_economy_p1_live.xml",
+    "/app/test_reports/pytest/iter20_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "FACTION SLUG MISMATCH IN REVIEW: The review mentions 'fantasy-map-dev' as the faction used for live caravan testing but no such faction exists in the DB (only the 6 seeded ones: ardent-legion, forsaken-court, elderborn-alliance, forgemasters-guild, high-kings-court, loremasters-guild). My live tests use forgemasters-guild via admin bypass (admin/moderator role short-circuits _ensure_faction_leader). Main agent likely ran their live smoke against an ephemeral faction that was later cleaned up — not a code bug, but the test-doc should be updated.",
+    "Caravan completion fires WorldStateService.record_world_event in a try/except — good (best-effort). The economy hook downstream is also async fire-and-forget. No dedup, so a flapping success/fail toggle could fire repeated AI events — worth a debounce if user abuse becomes an issue, but no fix needed now.",
+    "ItemCreate model uses field name 'stock' (not 'quantity') for inventory count — frontend test should be aware. The review's payload examples imply 'quantity' which is the caravan field; don't conflate.",
+    "Charter offered_goods invalid-slug rejection returns 400 OR 404 depending on path — the test_economy_p1_live_api accepts both; consider standardising on 400 across the codebase for 'invalid catalogue reference' so the frontend can write a single error handler.",
+    "/api/economy/markets/{nation}/{city_slug} envelope returns {goods: [...]} on the live server (top-level dict); the existing test_economy_live_api flow already documents the unwrap pattern — keep consistent in any future endpoints."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_economy_p1_live_api.py (NEW — 13 live-API smoke tests covering all P1 endpoints)"
+  ],
+  "success_rate": {
+    "backend": "100% (67/67 unit + 7/7 economy live + 13/13 P1 live = 87/87)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "test_credentials": "Admin: craftnn1222@gmail.com / admin123. Test character: a35a8ce2-71db-467c-8ad0-451fe9433a87. Test shop: 41fc2225-2fbc-4be9-abce-8ae1e166a37c (nation=ammeonon).",
+  "seed_data_creation": "Created and cleaned up: 3 test items in the admin's shop (auto-priced + manual + no-market attempts) — module teardown DELETEs each. Created 2 test caravans — one completed (cannot un-do but is in terminal state), one cancelled (refunded poster). seed-catalogue called twice (idempotent — both calls reported skipped=25).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "P1 economy is fully live and tested. Run order: `cd /app/backend && python -m pytest tests/test_economy.py tests/test_economy_p1.py tests/test_courtroom.py tests/test_law_jail_overhaul.py tests/test_t1_guard.py tests/test_economy_live_api.py tests/test_economy_p1_live_api.py -v`. The P1 live test file uses forgemasters-guild as the faction (admin bypass) — if main agent re-creates 'fantasy-map-dev' as a real faction with the admin as leader, the FACTION_SLUG constant can be flipped back. Test data is auto-cleaned but the admin's wallet may show small fluctuations during a run (debit on post, credit/refund on complete/cancel) — net zero by end of suite. If future P2 testing needs an auto-priced item to survive, change the teardown loop to skip items prefixed with 'KEEP_'.",
+  "rca of the issue": "Initial 5 live-test failures were all test-side payload mistakes I introduced and fixed: (a) ItemCreate requires field 'stock' not 'quantity' — sent wrong key, got 422; fixed. (b) Used faction slug 'fantasy-map-dev' from the review notes but only 6 real factions are seeded; swapped to 'forgemasters-guild' (admin role bypasses leader check anyway). No application code was modified."
+}

@@ -1,0 +1,118 @@
+import React from 'react';
+import { Link } from 'react-router-dom';
+import AnimatedBackground from '../components/AnimatedBackground';
+import { Button } from '../components/ui/button';
+import { Sparkles } from 'lucide-react';
+
+const LandingPage = () => {
+  return (
+    <div className="min-h-screen relative">
+      <AnimatedBackground />
+      
+      <div className="relative z-10">
+        {/* Hero Section */}
+        <div className="container mx-auto px-4 py-20">
+          <div className="text-center max-w-4xl mx-auto">
+            <h1 className="text-7xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-500 to-blue-500 animate-pulse" data-testid="landing-title">
+              Continents of Delarom
+            </h1>
+            <p className="text-2xl text-gray-300 mb-8 flex items-center justify-center gap-2">
+              <Sparkles className="w-6 h-6 text-yellow-400" />
+              Where Legends Are Written in the Stars
+              <Sparkles className="w-6 h-6 text-yellow-400" />
+            </p>
+            <div className="flex gap-4 justify-center mb-16" data-testid="cta-buttons">
+              <Link to="/register">
+                <Button size="lg" className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-lg px-8 py-6" data-testid="begin-journey-btn">
+                  🌟 Begin Your Journey
+                </Button>
+              </Link>
+              <Link to="/login">
+                <Button size="lg" variant="outline" className="border-purple-500/50 text-lg px-8 py-6" data-testid="return-realm-btn">
+                  ⚔️ Return to Realm
+                </Button>
+              </Link>
+            </div>
+          </div>
+
+          {/* World Description */}
+          <div className="glass-dark p-8 rounded-2xl max-w-5xl mx-auto mb-16">
+            <h2 className="text-3xl font-bold text-center mb-6 text-purple-300">The World Awaits</h2>
+            <p className="text-gray-300 text-lg leading-relaxed text-center">
+              In the year 215 A.E., the Continents of Delarom thrive under the watchful gaze of the Astral King. 
+              From the frozen peaks of Frostpeak to the molten depths of Emberdeep, from the celestial cities of 
+              Selindori to the bustling ports of Ammeonon—your story begins here.
+            </p>
+          </div>
+
+          {/* Nations */}
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
+            <div className="glass p-6 rounded-xl hover:scale-105 transition-transform duration-300" data-testid="nation-ammeonon">
+              <div className="text-4xl mb-3">⚔️</div>
+              <h3 className="text-2xl font-bold mb-2 text-purple-300">Ammeonon</h3>
+              <p className="text-gray-400">
+                The human empire where peace and prosperity reign. Cities like Wymroost and Invrasil beckon adventurers.
+              </p>
+            </div>
+
+            <div className="glass p-6 rounded-xl hover:scale-105 transition-transform duration-300" data-testid="nation-dhor-kuldor">
+              <div className="text-4xl mb-3">⛰️</div>
+              <h3 className="text-2xl font-bold mb-2 text-purple-300">Dhor-Kuldor</h3>
+              <p className="text-gray-400">
+                Eight dwarven holds carved into mountains, where forge-fires never die and honor runs deeper than stone.
+              </p>
+            </div>
+
+            <div className="glass p-6 rounded-xl hover:scale-105 transition-transform duration-300" data-testid="nation-selindori">
+              <div className="text-4xl mb-3">🌟</div>
+              <h3 className="text-2xl font-bold mb-2 text-purple-300">Selindori</h3>
+              <p className="text-gray-400">
+                The elven kingdoms of magic and mystery, from Sun Elves to Shadow Elves, each with ancient secrets.
+              </p>
+            </div>
+
+            <div className="glass p-6 rounded-xl hover:scale-105 transition-transform duration-300" data-testid="nation-aigraels">
+              <div className="text-4xl mb-3">⚡</div>
+              <h3 className="text-2xl font-bold mb-2 text-purple-300">Aigraels</h3>
+              <p className="text-gray-400">
+                A land of shifting power, where three factions vie for control and the throne changes hands like the wind.
+              </p>
+            </div>
+          </div>
+
+          {/* Features */}
+          <div className="glass-dark p-8 rounded-2xl">
+            <h2 className="text-3xl font-bold text-center mb-8 text-purple-300">Your Adventure Includes</h2>
+            <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
+              <div className="text-center" data-testid="feature-characters">
+                <div className="text-5xl mb-3">📜</div>
+                <h4 className="text-xl font-bold mb-2 text-white">Create Your Legend</h4>
+                <p className="text-gray-400">Craft detailed character bios with rich backstories, powers, and destinies.</p>
+              </div>
+
+              <div className="text-center" data-testid="feature-quests">
+                <div className="text-5xl mb-3">🎯</div>
+                <h4 className="text-xl font-bold mb-2 text-white">Quest & Earn</h4>
+                <p className="text-gray-400">Accept quests from fellow adventurers and earn currency for your deeds.</p>
+              </div>
+
+              <div className="text-center" data-testid="feature-marketplace">
+                <div className="text-5xl mb-3">🛍️</div>
+                <h4 className="text-xl font-bold mb-2 text-white">Trade & Prosper</h4>
+                <p className="text-gray-400">Open your own shop, sell items, and build your fortune in the marketplace.</p>
+              </div>
+
+              <div className="text-center" data-testid="feature-forums">
+                <div className="text-5xl mb-3">💬</div>
+                <h4 className="text-xl font-bold mb-2 text-white">Roleplay Together</h4>
+                <p className="text-gray-400">Join forums, share stories, and shape the world alongside other heroes.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default LandingPage;

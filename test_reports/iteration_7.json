@@ -1,0 +1,44 @@
+{
+  "summary": "Frontend-only regression for Phase 4 (Mystery & Identity) and Phase 5 (Apprenticeships + Whispered Rumors), plus smoke check on Characters, BountyBoard, Letters, Bonds, Ballads, Memorial. All targeted flows render and operate as expected. The two prior bugs in /characters (stray `s;` after default export and missing `Hammer` lucide import) are confirmed fixed — page loads cleanly with 9 seed characters and zero React/JS runtime errors. MysteryIdentityPanel modal opens from data-testid `mystery-identity-<id>` and shows the three tabs (Dreams, Prophecy, Persona) with content rendered (a real dream entry for the admin's Ausar Veltraus character). ApprenticeshipsPanel modal opens from data-testid `apprentice-<id>`, shows the empty state copy 'No apprenticeships yet.' and the `apprenticeship-start-btn` 'New' button; clicking 'New' opens the form with a Craft combobox, a 'Mentor NPC (search by name)' input and the opening-note textarea. /rumors renders 'Whispered Rumors', both tabs (Heard in Taverns / What You Whispered), all 5 nation filter chips (Ammeonon, Selindori, Dhor Khuldor, Aigraels, Veiled Realms) plus 'All nations', and the 'Plant a Rumor' button. /bounties still renders the Bounty Board header with nation filter pills. /letters, /bonds, /ballads, /memorial all load with body content and zero new console errors.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {
+        "screen": "Global (all routes)",
+        "issues": [
+          "MusicPlayer logs a single '[error] Audio error: Event' on every route change because it attempts autoplay before a user gesture; browsers (Chromium) block this. Suppress by catching the play() promise rejection silently in MusicPlayer.js — currently it surfaces as a console.error every navigation. Not a functional bug, but it pollutes the error console used for triage."
+        ]
+      }
+    ]
+  },
+  "test_report_links": [
+    "/app/test_reports/iteration_7.json"
+  ],
+  "action_items": [
+    "(Optional / low) Silence the 'Audio error: Event' console.error in MusicPlayer.js by catching the rejected play() promise — it currently fires on every route navigation and clutters the error console.",
+    "Pre-existing from iteration_6 (still open): bump SEVERITY_TINT 'major' to a higher contrast tint in BountyBoard.js, and lift non-selected filter pill text from text-gray-400 to text-gray-300."
+  ],
+  "critical_code_review_comments": [
+    "Characters.js is now 631 lines and growing — Phase 4/5 wired two more modals (MysteryIdentityPanel, ApprenticeshipsPanel) on top of CompanionManager, RapSheet, FamilyTreePanel. Consider extracting the per-character action-button column into a `<CharacterActions char={char} />` component. The recent 'stray s;' and 'missing Hammer import' bugs both happened in this file precisely because it is large and edits aren't getting code-review eyes.",
+    "MusicPlayer.js calls .play() unconditionally on mount/route-change and the rejected promise is logged via console.error. This generates a phantom error on every page nav that we now have to mentally filter out during regression runs. Standard fix: `audio.play().catch(() => {})` — autoplay block is expected, not an error.",
+    "ApprenticeshipsPanel 'New' modal opens correctly but the Mentor NPC search field is a free-text input — there is no visible debounce indicator or 'no results' state visible in this regression run (no mentor was selected because that requires seeded NPCs). Worth a Phase 5 follow-up test once a mentor NPC seed is available.",
+    "Rumors page renders an empty state ('The wind is still.') when there are no rumors — good. But the 'What You Whispered' tab was not exercised with content; main-agent self-test should plant a rumor and verify both tabs sync.",
+    "Console error stream is currently 1-of-1 noise (the autoplay rejection). After fixing that, future regressions can fail-fast on ANY console.error which would significantly improve signal."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "not tested (frontend-only request)",
+    "frontend": "100% on requested Phase 4 / Phase 5 / regression flows (7/7 routes verified, both new modals open and render correctly, all expected text + testids present, zero React/JS runtime errors)"
+  },
+  "test_credentials": "Admin: craftnn1222@gmail.com / admin123 (from /app/memory/test_credentials.md)",
+  "seed_data_creation": "None. Used the 9 pre-seeded admin characters. Did not create apprenticeships or rumors (request explicitly said no CRUD needed — creating one requires a mentor NPC seed which is out of scope).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Phase 4 (MysteryIdentityPanel: dreams/prophecy/persona) and Phase 5 (ApprenticeshipsPanel + /rumors page) frontends are verified to render and modal-open cleanly. If next iteration adds end-to-end apprenticeship creation, seed at least one NPC with craft proficiency for the admin's nation so the mentor search has a hit. The only persistent console noise is the MusicPlayer autoplay rejection — silencing it (audio.play().catch(()=>{})) will let future runs assert zero console.errors. Pre-existing iteration_6 design nits on /bounties (severity tint + filter pill contrast) are still open and out of scope for this iteration.",
+  "rca of the issue": "N/A — no blocking bugs found this iteration. Confirmed the two Characters.js bugs from the previous fix cycle (stray `s;` after default export and missing `Hammer` lucide import) are resolved: page loads, all character cards render with both new buttons (`mystery-identity-<id>` x9, `apprentice-<id>` x9), and the only console output is the unrelated benign MusicPlayer autoplay rejection."
+}

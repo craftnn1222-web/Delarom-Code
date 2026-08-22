@@ -1,0 +1,40 @@
+{
+  "summary": "Verified the new Faction Economy backend end-to-end. All 16 unit tests in test_economy.py pass (catalogue idempotent seed, specialty upserts + cost_history, contract create/break, price cascade, top_movers ordering, broken_routes filtering, event-tag goods filter). Full 57-test regression across test_economy + test_courtroom + test_law_jail_overhaul + test_t1_guard remains green. Wrote 7 live-API smoke tests against the public ingress — all 7 pass. Confirmed via live curl that (a) the iron-ingots Forgemasters→Astra-Lun contract is correctly marked broken (is_available=false, import_price=null), (b) broken-routes returns it, (c) top-movers reflects the AI war-event hook moving steel-armor (+375), iron-swords (+65), steel-ingots (+47) with cost_history entries — proves WorldStateService.record_world_event → apply_event_to_economy → quest_master_ai.infer_economy_event_impact chain is wired and working. Leader endpoint correctly returns 401/403 when unauthenticated. Spiced-wine-for-forgemasters contract correctly rejected with 400.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_economy.py",
+    "/app/backend/tests/test_economy_live_api.py",
+    "/app/test_reports/pytest/iter19_economy.xml",
+    "/app/test_reports/pytest/iter19_economy_live.xml",
+    "/app/test_reports/pytest/iter19_regression.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "economy.py route file uses inner-closure pattern (attach_economy_routes(api_router, db)) — works, but the file is large; consider splitting public reads vs admin writes vs leader writes into separate modules if it grows past ~500 lines.",
+    "seed-catalogue response envelope is {goods: {inserted, skipped}, specialties: {upserts}}. The PRD/review text says 'returns inserted=0, skipped=25' which is slightly misleading vs the wrapped shape — frontend/clients must read body.goods.inserted. Worth documenting in API docs.",
+    "Faction specialties endpoint returns {faction: {...}, specialties: [...]} envelope rather than a bare list — same documentation note; clients must read body.specialties.",
+    "AI economy hook (apply_event_to_economy) is best-effort/async — good — but there is no rate-limit or de-dup guard if the same event is recorded twice in quick succession. With gpt-4o-mini at small credit cost this is OK for now, but worth tracking for future tick-loop work.",
+    "The shop-item sourcing piece (resolve_item_auto_price) is implemented and unit-tested but NOT wired into shop creation yet — flagged in the agent_to_agent_context_note as a future task, no regression."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_economy_live_api.py (new — 7 live-API smoke tests)"
+  ],
+  "success_rate": {
+    "backend": "100% (16/16 unit economy + 7/7 live API + 57/57 regression)",
+    "frontend": "not tested (backend-only request)"
+  },
+  "test_credentials": "Admin: craftnn1222@gmail.com / admin123 (used for live API auth)",
+  "seed_data_creation": "None mutated. seed-catalogue endpoint hit twice — both times reported skipped=25 (catalogue was already seeded by main agent's prior smoke test). No new specialties/contracts created.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Economy system is live. Iron-ingots contract Forgemasters→Astra-Lun is currently in BROKEN state from main-agent smoke testing — the city has iron-ingots with is_available=false. AI war-event has already fired and moved 5 war-tagged goods (visible in top-movers and cost_history). If a future test needs an active contract to verify cascade live, either (a) re-create one via POST /api/economy/admin/contracts or (b) rely on the unit-test suite which covers the cascade in FakeDB. test_law_jail_overhaul.py's FakeDB stub now supports $push/async-for/delete_one/list-in-list $in — economy tests reuse it. Run: `cd /app/backend && python -m pytest tests/test_economy.py tests/test_courtroom.py tests/test_law_jail_overhaul.py tests/test_t1_guard.py tests/test_economy_live_api.py -v`",
+  "rca of the issue": "No bugs to RCA. Initial 2 live-API test failures were assertion-shape mistakes in my own test (expected bare list, got wrapped envelope); fixed locally and re-passed. No application code changed."
+}

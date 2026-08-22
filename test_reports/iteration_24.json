@@ -1,0 +1,34 @@
+{
+  "summary": "Backend-only verification of the two image-batch fixes (durability/auto-resume + migration-aware missing query) plus regression and a live single-batch smoke. 34/34 pytest cases pass (7 durability + 12 prayer + 10 canon + 5 new live regression). Mongo state doc image_batch_state._id='singleton' exists and contains every expected field with is_running=False and stopped_reason='Stopped by admin request.' exactly as the main agent described. Live smoke: POST /api/admin/image-batch/generate (single-batch, auto_continue=false) started, generated 6 real location images in ~2 min with failed=0 and last_error=null, then POST /api/admin/image-batch/stop returned 200 and the persisted doc closed out cleanly (is_running=False, iterations_run=1, generated=6, failed=0). auto_continue was NOT re-enabled.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/admin/image-batch (city_location_image_batcher._persist_state)", "issue": "State is only persisted at the END of a batch (and at kick-off/finish) — heartbeat_at stayed frozen at started_at for the whole 90s window while the in-memory status already showed generated=4. If the process dies mid-batch, up to 25 images' counters (generated/failed/last_results) are lost from the persisted doc even though the images themselves are saved. resume_if_needed also never actually inspects heartbeat_at for staleness despite the docstring claiming it does. Suggest persisting every N images (or every image) and using heartbeat_at in the orphan check."},
+      {"endpoint": "/api/admin/image-batch/stop", "issue": "Cosmetic: stopping a single-batch run records stopped_reason='Single-batch run complete.' instead of 'Stopped by admin request.' — the should_stop break inside generate_batch_sync is overwritten by the unconditional single-batch reason. Admins cannot tell a truncated run from a completed one."},
+      {"endpoint": "MISSING_QUERY verification", "issue": "Not a defect, but the requested assertion 'NEW count < OLD count' does NOT hold on current prod data: cities OLD=0/NEW=0, locations OLD=764/NEW=764, and zero docs currently have image_id set with image_url unset (all 7 cities with image_id still retain image_url). The fix is therefore latent/preventive, verified logically instead (unit test test_missing_query_treats_image_id_as_has_image + direct sampling: 5 cities with image_id — wymroost, crares, folis, azure, dravuns-pike — are all excluded by the NEW query). Also note the review request's expectation that 'vargath' (aigraels) has an image_id is wrong: vargath has NO image_id field."}
+    ]
+  },
+  "frontend_issues": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+  "test_report_links": [
+    "/app/backend/tests/test_image_batch_durability.py",
+    "/app/backend/tests/test_iteration25_regression_live.py",
+    "/app/test_reports/pytest/iteration25_results.xml"
+  ],
+  "action_items": [
+    "OPTIONAL (minor): persist batch state more frequently than once-per-batch and actually use heartbeat_at in resume_if_needed's orphan detection.",
+    "OPTIONAL (cosmetic): set stopped_reason='Stopped by admin request.' when should_stop truncates a single-batch run."
+  ],
+  "critical_code_review_comments": [
+    "city_location_image_batcher.py:_persist_state is only called at kick-off, after each full batch, and in the finally block — heartbeat granularity is ~25 images (~8 min), so mid-batch crash loses counters and any future staleness check would be coarse.",
+    "resume_if_needed rehydrates should_stop from Mongo; safe today only because kick_off_background_batch resets it. Keep that invariant if the resume path is refactored.",
+    "Batcher still writes multi-MB base64 into cities.image_url / locations.image_url rather than going through ImageService.store_bytes + image_id, so every generated doc will later be migrated (and the doc bloat / churn persists). The new MISSING_QUERY makes this safe cost-wise, but writing image_id directly would be cleaner."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration25_regression_live.py"],
+  "success_rate": {"backend": "100% (34/34 pytest; live smoke generated 6/6 images, 0 failures)", "frontend": "not tested (backend-only request)"},
+  "seed_data_creation": "None. Live smoke generated 6 real location images (~$0.24) and left the batch STOPPED with auto_continue=false.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "admin craftnn1222@gmail.com / admin123 — POST /api/auth/login returns access_token (JWT, 3 segments) + httpOnly cookie; wrong password -> 401.",
+  "context_for_next_testing_agent": "Batch is currently STOPPED (is_running=false, auto_continue=false, stopped_reason='Single-batch run complete.', generated=6, failed=0). Locations missing images: 764 (cities: 0). Use /tmp/mongo_state_probe.py and /tmp/smoke_batch.py patterns to inspect state via motor (source /app/backend/.env first) — do NOT edit files under /app/backend while a batch runs (uvicorn --reload restarts the process; the new resume path only re-kicks auto_continue runs). New live regression suite: /app/backend/tests/test_iteration25_regression_live.py (prayers/gods, tongue-of-yros/state, auth login +/-, image-batch status).",
+  "rca_of_the_issue": "Both iteration_23 defects are addressed. (1) Durability: job state is now upserted to image_batch_state._id='singleton' at kick-off, after each batch and in the finally block, and a FastAPI startup hook calls CityLocationImageBatcher.resume_if_needed(db), which re-kicks only when the persisted doc had is_running=True AND auto_continue=True AND survey shows remaining work; restore_from never inherits is_running. Verified by 7 unit tests plus the observed real behaviour: my writing of a new test file under /app/backend triggered a uvicorn reload and, because the prior run was cleanly stopped, no spurious resume occurred. (2) Money-burn: MISSING_QUERY now $and's the image_url conditions with equivalent image_id conditions, so migrated docs (image_id set, image_url $unset) are excluded — currently latent since no doc is in that state yet, but proven by unit test and by sampling image_id-bearing cities."
+}

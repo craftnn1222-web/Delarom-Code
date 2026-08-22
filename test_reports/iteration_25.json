@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 25 (both). Backend: 22/22 live API tests GREEN in /app/backend/tests/test_iteration26_festivals_parties_live.py — Elder-Gods festival calendar endpoint shape, prayers smoke (gods + submit verdict), and the full Party Quests lifecycle (create → 2nd-user join → start with MoC opening → host turn → 2nd-user turn → 409 not-your-turn → leave → host-cannot-leave 409 → finish → 409 not-active) plus guardrails (foreign character 404, duplicate join 409, non-host start 409, unauth 403, 422 validation, non-existent party 404, finished party hidden from default listing but present in /parties/mine). Frontend: /prayers festival-calendar-block renders and expands to all 4 god cards (active=null today, banner correctly absent); /parties create dialog → navigates to /parties/{id}; RECRUITING badge, roster, Start the Scene → IN SESSION with MoC opening in party-scene-log, action input enabled for host, action posted and appended (2 entries, player action_text visible), End Party confirm → ENDED after refresh (verified in DB too). No blocking defects found.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/parties/{id}/start|action", "issue": "LLM turn narration takes 30-120s under the running image batcher (test suite took ~9 min). Not a defect, but the frontend has no visible per-request timeout guard; consider a client timeout + retry message."},
+      {"endpoint": "POST /api/parties/{id}/join (full party)", "issue": "The 'This party is full.' branch could not be exercised live — only 2 real user accounts exist, so a 2-seat party is already full after the 2nd join. Branch is covered by unit test test_party_service.py::test_join_rejects_full_and_duplicate. Seed a 3rd test user if live coverage is desired."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {"component": "Dashboard", "issue": "data-testid='dashboard-parties-btn' does not appear within 60s on first load; it became visible only after ~60-150s (dashboard renders quick-actions after the slow /api/characters call). Consider rendering quick-actions before character data resolves.", "selector": "[data-testid='dashboard-parties-btn']", "priority": "LOW"}
+    ],
+    "integration_issues": [
+      {"flow": "Party finish", "issue": "After accepting the confirm prompt, the status badge stayed 'IN SESSION' for >8s (DB already 'finished'); it showed 'ENDED' only after the 6s poll/reload. Optimistic local state update (or awaiting the finish response before re-render) would make the transition feel correct.", "affected_selectors": ["[data-testid='finish-party-btn']", "[data-testid='party-status-badge']"]}
+    ],
+    "design_issues": [
+      {"screen": "/parties/{id} scene log", "issues": ["MoC narration contained a stray non-English token ('悉知') mid-sentence in gpt-4o output — recommend adding an explicit 'respond in English only' constraint to the MoC system prompt.", "Long scene log has an inner scroll container that opens mid-narration, so the first paragraph of the newest entry is visually clipped until the user scrolls up."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_iteration26_festivals_parties_live.py",
+    "/app/test_reports/pytest/iter26_festivals_parties.xml"
+  ],
+  "action_items": [
+    "Add an explicit English-only instruction to PartyService._system_prompt to prevent stray CJK tokens in MoC narration.",
+    "Optimistically set party status to 'finished' after the finish call resolves so the badge flips immediately instead of waiting for the 6s poll.",
+    "Render Dashboard quick actions (incl. dashboard-parties-btn) independently of the slow /api/characters fetch."
+  ],
+  "critical_code_review_comments": [
+    "routes/parties.py maps all ValueError to 409 — 'Party not found.' from start/finish/leave/action therefore returns 409 instead of 404; distinguish not-found from conflict.",
+    "party_service.leave_party recomputes turn index but if the CURRENT actor leaves the resulting index can point at the next player without narrating a transition; acceptable for MVP but document it.",
+    "submit_action loads the entire action history (to_list(length=1000)) on every turn just to compute turn_number; use a count/max query to avoid growth cost."
+  ],
+  "updated_files": ["/app/backend/tests/test_iteration26_festivals_parties_live.py"],
+  "success_rate": {"backend": "100% (22/22)", "frontend": "100% of tested flows (3 minor polish items)"},
+  "seed_data_creation": "Created a character for rep_tester_round2@delarom.com (TEST_Joiner_*) and several TEST_ parties (TEST_The Lantern Circle, TEST_Full Party, TEST_UI Lantern Circle) — all left in 'finished' state so they are hidden from the Open Parties list.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin craftnn1222@gmail.com / admin123; second user rep_tester_round2@delarom.com / Testpass123! (now has 1 character)",
+  "context_for_next_testing_agent": "Live party/festival suite: /app/backend/tests/test_iteration26_festivals_parties_live.py (22 tests, ~9 min because of LLM latency — run with a >600s budget in the background). Today (2026-08-21, Friday) no Elder-Gods festival is active, so /api/prayers/festivals active=null is expected; to exercise the banner, patch datetime or test on Sun/Mon/Wed/Thu. Frontend login on the preview URL can take 60-120s — always wait_for_url with a 120s timeout before navigating, otherwise you get bounced back to /login.",
+  "rca_of_the_issue": "No functional defects. The only observed 'stale' UI states (finish badge, dashboard button) trace to slow backend responses caused by the running gpt-image-1 batch job plus poll-based (6s) refresh instead of optimistic state updates."
+}

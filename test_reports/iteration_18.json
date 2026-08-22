@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 18 (backend only): verified the courtroom/trial system added on top of the law-jail overhaul. Ran existing 18 courtroom unit tests + 13 law_jail_overhaul + 11 t1_guard + 9 law_refactor unit tests (50 total). Added 10 new live-API integration tests in test_courtroom_live_api.py covering surrender guards, dismissal-on-clean-record, trial GET shape, /defend & /rest-case 'no active trial' 400 guards, auth requirement, and source-level checks that BOTH surrender and _auto_arrest_and_imprison delegate to the shared create_trial_from_open_crimes helper. 60/60 tests pass (100%).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "(general)", "issue": "FastAPI on_event('startup'/'shutdown') in server.py are deprecated — pytest emits warnings. Non-blocking but should migrate to lifespan handlers."},
+      {"endpoint": "review-request count vs reality", "issue": "Request states 'All 14 tests in test_courtroom.py pass' but the file actually contains 18 tests (all pass). Same for test_law_jail_overhaul.py — request says 12, file has 13 (all pass). Documentation drift, not a bug."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_courtroom.py",
+    "/app/backend/tests/test_courtroom_live_api.py",
+    "/app/backend/tests/test_law_jail_overhaul.py",
+    "/app/backend/tests/test_law_refactor.py",
+    "/app/backend/tests/test_t1_guard.py",
+    "/app/test_reports/pytest/iter18_courtroom.xml",
+    "/app/test_reports/pytest/iter18_courtroom_live.xml"
+  ],
+  "action_items": [
+    "(Optional/non-blocking) Migrate server.py on_event hooks to FastAPI lifespan API to silence deprecation warnings.",
+    "(Optional) Update review-request docs: test_courtroom.py has 18 tests (not 14), test_law_jail_overhaul.py has 13 (not 12)."
+  ],
+  "critical_code_review_comments": [
+    "routes/law.py:character_surrender correctly delegates to create_trial_from_open_crimes (line 107) — no direct imprisonment on surrender. Guards in correct order: imprisoned check → already-on-trial check → no-crimes dismissal → trial creation.",
+    "server.py:_auto_arrest_and_imprison (lines 1468-1544) correctly routes through create_trial_from_open_crimes (line 1519). Also seeds a 'resisting_authority' minor crime when AI flags arrest with no open crimes, so the trial has charges to consider — matches choice (3a) trigger on both manual surrender AND auto-arrest.",
+    "server.py:/api/locations/{nation}/{location}/roleplay (lines 1620-1642) correctly enforces 403 (wrong location) and 409 (at courthouse) when a trial is in_session.",
+    "create_trial_from_open_crimes (routes/courtroom.py:33) is well-structured: looks up bounty, resolves city, ensures courthouse + judge + prosecutor NPCs, gathers witnesses, starts trial, publishes Chronicle event. All idempotent operations.",
+    "CourtroomService.append_defence_turn clamps leniency in [-100, +100] — verified by test_leniency_clamps_at_100 and test_leniency_clamps_at_minus_100.",
+    "_execute_verdict handles all 5 sentence types (imprison/fine/exile/execute/dismissed); execute path even generates an eulogy via memorial._generate_eulogy and marks character is_active=False.",
+    "Per-turn AI call uses gpt-4o and verdict uses gpt-4o-mini — costs are kept low. AI failures are wrapped in try/except → 502 with detail, so the trial state is not corrupted on transient AI errors.",
+    "No file-size issue: courtroom_service.py and routes/courtroom.py are each well under 700 lines.",
+    "MongoDB _id is properly excluded (every find_one uses {'_id': 0, ...} projection)."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_courtroom_live_api.py (new — 10 live-API guard + code-review tests)"
+  ],
+  "success_rate": {"backend": "100% (60/60 tests passing)", "frontend": "not tested (testing_type=backend only)"},
+  "test_credentials": "admin: craftnn1222@gmail.com / admin123 (loaded from /app/memory/test_credentials.md). Admin character ID: a35a8ce2-71db-467c-8ad0-451fe9433a87.",
+  "seed_data_creation": "None. Live API tests use dismissal path (no open crimes) and guard paths (no active trial) — no DB writes. Main agent already ran the happy-path end-to-end (trial → defend → rest-case → verdict).",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Live API tests for courtroom system live at /app/backend/tests/test_courtroom_live_api.py. To run, export both MONGO_URL (from /app/backend/.env) and REACT_APP_BACKEND_URL (from /app/frontend/.env) before invoking pytest. The happy-path defend → verdict flow consumes LLM credits (gpt-4o + gpt-4o-mini per turn) so live tests should avoid actually starting a trial that needs to be advanced through the AI. Use the dismissal path or seed a trial directly in the FakeDB for unit-level coverage. The auto-arrest path is gated by the AI returning arrest_executed:true in analyze_interaction — hard to drive in a deterministic test; code review on _auto_arrest_and_imprison (server.py:1468-1544) is the recommended verification.",
+  "rca of the issue": "No issues found. The trial system has been correctly extended from the law-jail overhaul: surrender + auto-arrest both delegate to the shared create_trial_from_open_crimes helper, RP is correctly locked out during active trials, leniency is properly clamped, and all 5 verdict types route to the correct resolution. The system is production-ready."
+}

@@ -1,0 +1,34 @@
+{
+  "summary": "Round 3 (FINAL) faction-membership testing. Backend pytest 56/56 PASS (test_factions_round3.py 14/14 + factions/round2/law regression 42/42). Frontend E2E verified end-to-end via Playwright on the public preview URL: treasury pill renders + live-updates after donate, all 5 tabs render with 0 console errors, leader-only/officer-only UI gating works (donate-coffer, new-quest, ai-generate-quest, declare-rivalry), AI-generate quest produces a quest row (fallback template path likely, but transparent), manual quest creation succeeds with min-length validation, quest claim awards reward gold (wallet 1125 -> 1175, +50g toast), rivalry declare->escalate->sue-for-peace flow (25 -> 35 -> 0/100, status transitions visible), admin rivalries endpoint returns decorated payload.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_factions_round3.py",
+    "/app/backend/tests/test_factions_round2.py",
+    "/app/backend/tests/test_factions.py",
+    "/app/backend/tests/test_law_system.py",
+    "/app/test_reports/pytest/factions_round3.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "routes/factions.py is 1235 lines - consider splitting Round 3 (quests/treasury/rivalries) into separate modules (factions_quests.py, factions_treasury.py, factions_rivalries.py) to stay under the 700-line soft limit.",
+    "Quest claim UI: the 'CLAIM AS' select_option timed out for the 2nd character because the page wasn't reloaded after adding them via API. In production this is fine (user has already joined when they see the tab), but consider re-fetching the membership-eligible character list when the claim section is expanded so members joining mid-session are picked up without a refresh.",
+    "Leader cannot self-leave a faction (409). Round 3 backend tests use _force_leave to bypass; if a leader needs to abdicate, there is no graceful UI path. Consider an explicit 'transfer leadership' or 'disband' action so leaders can exit cleanly.",
+    "Rivalry section is hidden once status='dormant' (intensity=0). Recent shifts history is therefore unreachable after sue-for-peace. Consider an 'archived rivalries' collapsible section, or showing dormant with an 'Re-declare' affordance."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin: craftnn1222@gmail.com / admin123 (used). rep_tester_round2@delarom.com / Testpass123! available but not needed since admin has 9 characters.",
+  "seed_data_creation": "Pre-seeded admin's primary character (Ausar Veltraus) as leader of forgemasters-guild via /api/factions/admin/seed-leaders for UI gating tests. Donated 75g to coffer. Created 2 test quests ('TEST UI Manual Quest' and AI-generated). Declared/escalated/peace'd a rivalry with ardent-legion. Admin Buyer (2nd char) left after testing; Ausar Veltraus retained as leader (409 on leave - by design). Future testing agents should be aware these test artifacts exist on forgemasters-guild.",
+  "retest_needed": false,
+  "main_agent_can_self_test": true,
+  "context_for_next_testing_agent": "Round 3 FINAL is complete and stable. Backend pytest 56/56, frontend 0 console errors, all 4 new collections (faction_quests, faction_quest_completions, faction_treasury, faction_treasury_log, faction_rivalries) persist correctly. If reusing admin account, admin's primary char Ausar Veltraus is currently LEADER of forgemasters-guild with 75g donated. Use _force_leave pattern or admin/seed-leaders to reset.",
+  "rca of the issue": "No issues found. All Round 3 endpoints, the rivalry auto-escalation hook (verified via test_factions_round3.py + law_service integration), the AI fallback path (verified via test_ai_generate_returns_quest passing without LLM), and the frontend rank-gated UI all behave per spec."
+}

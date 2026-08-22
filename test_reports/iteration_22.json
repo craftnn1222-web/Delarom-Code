@@ -1,0 +1,42 @@
+{
+  "summary": "Full backend + frontend test of the Deep Immersion arc. Created /app/backend/tests/test_deep_immersion.py (26 live-API pytest cases): prayer catalogue, prayer submit (live gpt-4o), per-god cooldown, validation, blessings/history/recent, Tongue of Y'ros state/attempt/cooldown/history/relinquish, admin image-batch survey+status (read-only, no generation triggered), idempotent seed endpoints, and canon greps. 26/26 pass. Existing tests/test_prayer_service.py 12/12 pass. Frontend: Playwright e2e on the preview URL covered login, navbar (nav-prayers + '215 A.E.'), /prayers (4 god cards, char picker, race-affinity badge, ring highlight, submit gating, live prayer submission -> result modal 'A Flicker' with narration + boon, close, recent prayers list), /tongue-of-yros (state banner, picker, non-dwarf warning, textarea, disabled submit, history), and the admin Database tab (both new seed panels clicked and returned correct idempotent results; image-batch panel present but Generate was NOT clicked).",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "POST /api/prayers/submit", "issue": "Prayer text shorter than 10 chars returns 422 (Pydantic min_length on PrayerSubmitPayload), not the 409 stated in the test request. Service-level ValueError path is unreachable. Cosmetic/spec mismatch only — UI already blocks <10 chars."},
+      {"endpoint": "POST /api/tongue-of-yros/attempt", "issue": "attempt_text min_length is 15 at the route and 15 in the service (request doc said 20+). Consistent internally; just note the doc drift."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Global navigation", "issues": ["/tongue-of-yros has a route but no navbar/dashboard link anywhere — the page is only reachable by typing the URL. Consider a nav entry or a link from the Prayers page / Thal'Karrak city page."]},
+      {"screen": "Prayers character picker", "issues": ["Admin account shows 4 identically named 'Focused Test Hero — Human (Warrior)' options (leftover test data). Not a code bug, but the picker gives no way to tell them apart; consider appending a short id/nation suffix."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_deep_immersion.py",
+    "/app/backend/tests/test_prayer_service.py",
+    "/app/test_reports/pytest/deep_immersion.xml"
+  ],
+  "action_items": [
+    "Optional: add a navbar/dashboard entry point for /tongue-of-yros (currently URL-only).",
+    "Optional: align prayer-length rejection status (422 vs 409) with the documented contract."
+  ],
+  "critical_code_review_comments": [
+    "DatabaseSeedPanel.js is 792 lines — over the 700-line guideline; split the image-batch and per-tier seed cards into separate components.",
+    "prayer_service.py sets expires_at for 'flicker' verdicts as well as 'blessing' and get_active_blessings() surfaces both; intentional per docstring but means a flicker occupies the god's 'active blessing' slot for 6h — verify that's desired.",
+    "PrayerService._existing_blessing_active only downgrades blessings from the SAME god, so a character can hold four simultaneous blessings (one per god). Confirm this is the intended power ceiling.",
+    "Ehena has an empty race_affinity list so affinity_match is always false for her — the UI correctly shows no badge, but affinity_bias is 0 (neither nudge). Fine, just flagging the asymmetry.",
+    "Image-batch status panel is conditionally rendered (only after iterations_run/generated > 0 or is_running) — verified as intended, not a missing test-id."
+  ],
+  "updated_files": ["/app/backend/tests/test_deep_immersion.py"],
+  "success_rate": {"backend": "100% (26/26 new + 12/12 prayer unit)", "frontend": "100% of tested flows"},
+  "seed_data_creation": "Cleared prior prayers for character 'Admin Buyer' (Elf) and tongue attempts for 'Ausar Veltraus' to exercise cooldowns; created 3 real prayers (seren, yros, ehena) and 1 tongue attempt via live API. Ran both idempotent seed endpoints (dhor-kuldor canon 6 refreshed, titan sites 14 already annotated).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Admin craftnn1222@gmail.com / admin123 (login returns access_token JSON; Bearer header)",
+  "context_for_next_testing_agent": "test_deep_immersion.py is cooldown-aware: TestPrayerFlow wipes db.prayers for the chosen elf character and TestTongueOfYros wipes tongue_of_yros_attempts for the chosen character, so it is re-runnable. Each full run makes 3 live gpt-4o calls (~cents). Image batch generation was never triggered (865 images still missing, ~$34 if run). Tongue of Y'ros bearer_active is still false; no dwarf character exists on the admin account, so the 'drawn'/'tremor' path is untested.",
+  "rca_of_the_issue": "No defects found; the only deviations are documentation/spec drift on HTTP status for short prayers and a missing navigation entry point for the Tongue of Y'ros page."
+}
