@@ -71,6 +71,8 @@ export const QUESTS = {
   playInput: "quest-play-input",
   playSendButton: "quest-play-send-button",
   playLogEntry: "quest-play-log-entry",
+  companions: "quest-companions",
+  companion: "quest-companion",
 };
 
 export const MARKET = {
@@ -87,6 +89,20 @@ export const FACTIONS = {
   detailScreen: "faction-detail-screen",
   joinButton: "faction-join-button",
   leaveButton: "faction-leave-button",
+  treasuryCard: "faction-treasury-card",
+  donateButton: "faction-donate-button",
+  donateInput: "faction-donate-input",
+  donateSubmit: "faction-donate-submit",
+  threadsSection: "faction-threads-section",
+  threadCard: "faction-thread-card",
+  newThreadButton: "faction-new-thread-button",
+  threadScreen: "faction-thread-screen",
+  replyInput: "faction-reply-input",
+  replySubmit: "faction-reply-submit",
+  newThreadScreen: "faction-new-thread-screen",
+  threadTitleInput: "faction-thread-title-input",
+  threadContentInput: "faction-thread-content-input",
+  threadCreateSubmit: "faction-thread-create-submit",
 };
 
 export const PARTIES = {
@@ -112,4 +128,30 @@ export const REALM = {
   marketplaceLink: "realm-marketplace-link",
   factionsLink: "realm-factions-link",
   partiesLink: "realm-parties-link",
+  myShopLink: "realm-my-shop-link",
+};
+
+export const SHOP = {
+  manageScreen: "my-shop-screen",
+  createForm: "shop-create-form",
+  createName: "shop-create-name",
+  createDescription: "shop-create-description",
+  createNation: "shop-create-nation",
+  createSubmit: "shop-create-submit",
+  addItemButton: "shop-add-item-button",
+  itemCard: "manage-item-card",
+  editItemButton: "shop-edit-item",
+  deleteItemButton: "shop-delete-item",
+  itemFormScreen: "shop-item-form-screen",
+  itemName: "shop-item-name",
+  itemDescription: "shop-item-description",
+  itemPrice: "shop-item-price",
+  itemStock: "shop-item-stock",
+  itemCategory: "shop-item-category",
+  itemSlot: "shop-item-slot",
+  autoPriceToggle: "shop-item-auto-toggle",
+  itemGood: "shop-item-good",
+  itemCity: "shop-item-city",
+  itemMarkup: "shop-item-markup",
+  itemSubmit: "shop-item-submit",
 };

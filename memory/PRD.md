@@ -436,6 +436,14 @@ Cross-platform feature: players can roleplay an ACCEPTED quest in a dedicated sc
 - **KNOWN ISSUE (observed, not fixed — needs decision)**: while the city/location image-generation batch is running it saturates the backend event loop — API latency spikes to 10–45 s per request, making the app feel broken. Batch was temporarily stopped for testing then resumed (user wants it to finish). Consider throttling/offloading the batcher so it doesn't block request latency.
 - **SEPARATE STORAGE ISSUE (out of scope, backlog)**: character `portrait_url` is stored as base64 in the character document — bloats every `/characters` and `/characters/{id}` response. Should migrate to blob/reference storage like city/location images did.
 
+## Quest Companions + Faction Halls (mobile) + My Shop (mobile) (2026-08-23)
+Three cross-platform features shipped together; no backend changes (all endpoints already existed). Tested by testing_agent iteration_35 (backend 7/7; web + mobile flows all pass).
+- **Quest Companions (web + mobile)**: the Quest Play scene now shows fellow adventurers who accepted the same quest (via `GET /api/quests/{id}/participants`). Web = "Fellow Adventurers" panel (`quest-companions-panel`); mobile = horizontal chip row (`quest-companions`). Own hero marked "(you)".
+- **Faction Halls on mobile (parity with web)**: faction detail (`app/(tabs)/realm/faction.tsx`) now has a **Treasury** card (balance + total donated, member-only Donate modal) and a **Discussion** section (thread list → thread screen with replies + member reply composer → new-thread screen). New screens: `realm/faction-thread.tsx`, `realm/faction-thread-new.tsx`. Uses existing `/factions/{slug}/threads*` and `/factions/{slug}/treasury*` endpoints; non-members get the member-only gate.
+- **My Shop manager on mobile**: new Realm hub entry → `realm/my-shop.tsx` (create shop if none; else header + add/edit/delete items + recent-customers peek) and `realm/shop-item.tsx` (item form with stat bonuses + **full economy auto-pricing**: good/city pickers, markup, live retail preview). New reusable `src/components/PickerField.tsx` (modal list picker — the RN stand-in for a web <select>).
+- **DATA STATE (not a bug)**: no preview city currently has an active trade contract, so shop auto-pricing preview shows "no active contract" and POSTing an auto-priced item returns 400 by backend design. Manual pricing works fully.
+- **Backlog nits from review**: `PUT /api/items/{id}` needs the full ItemCreate body (a partial-update model would improve DX); `ardent-legion` shows member_count=0 despite 15 threads (orphaned membership rows — optional cleanup).
+
 ## Backlog (P1 → P3)
 - **P1**: Refactor `server.py` (3900+ lines) into route modules.
 - **P1 (security)**: Migrate auth token from `localStorage` to httpOnly cookies (23 instances across `api.js`, `Login.js`, `AdminDashboard.js`, `AuthContext.js`, `ProtectedRoute.js`).

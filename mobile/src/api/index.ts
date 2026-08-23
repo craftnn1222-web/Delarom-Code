@@ -256,7 +256,20 @@ export interface QuestAction {
       `/quests/${id}/actions`,
       { action_text },
     ),
+  participants: (id: string) => api.get<QuestParticipant[]>(`/quests/${id}/participants`),
 };
+
+export interface QuestParticipant {
+  user: { id: string; username: string };
+  character: { id: string; name: string; race: string; class: string };
+  acceptance: {
+    id: string;
+    status: string;
+    character_id: string;
+    accepted_at: string;
+    completed_at?: string | null;
+  };
+}
 
 // ---------------- Shops / Marketplace ----------------
 export interface Shop {
@@ -281,8 +294,36 @@ export interface Item {
   item_type: string;
   equipment_slot?: string | null;
   stat_bonuses?: Record<string, number>;
+  source_good_slug?: string | null;
+  source_city_slug?: string | null;
+  source_nation?: string | null;
+  markup_pct?: number | null;
   is_auto_priced: boolean;
+  last_repriced_at?: string | null;
   created_at: string;
+}
+
+export interface ItemCreatePayload {
+  name: string;
+  description: string;
+  price: number;
+  stock: number;
+  category: string;
+  item_type: string;
+  equipment_slot?: string | null;
+  stat_bonuses?: Record<string, number>;
+  source_good_slug?: string | null;
+  source_city_slug?: string | null;
+  source_nation?: string | null;
+  markup_pct?: number | null;
+  is_auto_priced?: boolean;
+}
+
+export interface ShopCustomer {
+  customer_name: string;
+  units: number;
+  item_name: string;
+  at: string;
 }
 
 export interface PurchaseResult {
@@ -300,6 +341,35 @@ export const ShopApi = {
   items: (id: string) => api.get<Item[]>(`/shops/${id}/items`),
   purchase: (itemId: string, character_id: string) =>
     api.post<PurchaseResult>(`/items/${itemId}/purchase`, { character_id }),
+  // ---- Owner management ----
+  myShop: () => api.get<Shop>("/shops/my-shop"),
+  create: (body: { name: string; description: string; nation: string }) =>
+    api.post<Shop>("/shops", body),
+  addItem: (shopId: string, body: ItemCreatePayload) =>
+    api.post<Item>(`/shops/${shopId}/items`, body),
+  updateItem: (itemId: string, body: ItemCreatePayload) =>
+    api.put<Item>(`/items/${itemId}`, body),
+  deleteItem: (itemId: string) => api.del<{ message: string }>(`/items/${itemId}`),
+  customers: (shopId: string) => api.get<ShopCustomer[]>(`/shops/${shopId}/customers`),
+};
+
+// ---------------- Economy (goods market — powers shop auto-pricing) ----------------
+export interface Good {
+  slug: string;
+  name: string;
+  category?: string | null;
+}
+
+export interface MarketRow {
+  good_slug: string;
+  is_available: boolean;
+  import_price: number | null;
+}
+
+export const EconomyApi = {
+  goods: () => api.get<Good[]>("/economy/goods"),
+  market: (nation: string, citySlug: string) =>
+    api.get<MarketRow[]>(`/economy/markets/${nation}/${citySlug}`),
 };
 
 // ---------------- Factions ----------------
@@ -342,7 +412,57 @@ export const FactionApi = {
     api.post<FactionMember>(`/factions/${slug}/join`, { character_id, pitch }),
   leave: (slug: string, character_id: string) =>
     api.post<{ ok: boolean; left: string }>(`/factions/${slug}/leave`, { character_id }),
+  // ---- Halls: threads + treasury ----
+  threads: (slug: string) => api.get<FactionThread[]>(`/factions/${slug}/threads`),
+  thread: (slug: string, threadId: string) =>
+    api.get<{ thread: FactionThread; replies: FactionThreadReply[] }>(
+      `/factions/${slug}/threads/${threadId}`,
+    ),
+  createThread: (
+    slug: string,
+    body: { character_id: string; title: string; content: string; min_rank?: string },
+  ) => api.post<FactionThread>(`/factions/${slug}/threads`, body),
+  reply: (slug: string, threadId: string, body: { character_id: string; content: string }) =>
+    api.post<FactionThreadReply>(`/factions/${slug}/threads/${threadId}/replies`, body),
+  treasury: (slug: string) => api.get<FactionTreasury>(`/factions/${slug}/treasury`),
+  donate: (slug: string, body: { character_id: string; amount: number }) =>
+    api.post<{ ok: boolean; treasury: FactionTreasury }>(
+      `/factions/${slug}/treasury/donate`,
+      body,
+    ),
 };
+
+export interface FactionThread {
+  id: string;
+  faction_id: string;
+  faction_slug: string;
+  character_id: string;
+  character_name: string;
+  author_rank: string;
+  title: string;
+  content?: string;
+  min_rank: string;
+  is_active: boolean;
+  replies_count: number;
+  created_at: string;
+}
+
+export interface FactionThreadReply {
+  id: string;
+  thread_id: string;
+  character_id: string;
+  character_name: string;
+  author_rank: string;
+  content: string;
+  created_at: string;
+}
+
+export interface FactionTreasury {
+  faction_id: string;
+  balance: number;
+  total_donated: number;
+  updated_at?: string | null;
+}
 
 // ---------------- Parties ----------------
 export interface PartyMember {

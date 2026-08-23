@@ -16,7 +16,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { QUESTS } from "@/constants/testIds";
-import { Quest, QuestAction, QuestApi } from "@/src/api";
+import { Quest, QuestAction, QuestApi, QuestParticipant } from "@/src/api";
 import { Header } from "@/src/components/Header";
 import { EmptyState, ErrorView, Loading } from "@/src/components/StateViews";
 import { colors, radius, spacing, typography } from "@/src/theme/theme";
@@ -26,6 +26,7 @@ export default function QuestPlayScreen() {
 
   const [quest, setQuest] = useState<Quest | null>(null);
   const [actions, setActions] = useState<QuestAction[]>([]);
+  const [participants, setParticipants] = useState<QuestParticipant[]>([]);
   const [heroName, setHeroName] = useState<string | null>(null);
   const [notAccepted, setNotAccepted] = useState(false);
   const [completed, setCompleted] = useState(false);
@@ -40,13 +41,15 @@ export default function QuestPlayScreen() {
   const load = useCallback(async () => {
     if (!id) return;
     setStatus("loading");
-    const [q, hist, mine] = await Promise.allSettled([
+    const [q, hist, mine, parts] = await Promise.allSettled([
       QuestApi.get(id),
       QuestApi.actions(id),
       QuestApi.myAccepted(),
+      QuestApi.participants(id),
     ]);
     if (q.status === "fulfilled") setQuest(q.value);
     if (hist.status === "fulfilled") setActions(hist.value);
+    if (parts.status === "fulfilled") setParticipants(parts.value);
     if (mine.status === "fulfilled") {
       const entry = mine.value.find((m) => m.quest.id === id);
       if (entry) {
@@ -130,6 +133,41 @@ export default function QuestPlayScreen() {
               <Text style={styles.playingText}>
                 Playing as <Text style={styles.playingName}>{heroName}</Text>
               </Text>
+            </View>
+          ) : null}
+
+          {participants.length > 0 ? (
+            <View style={styles.companions} testID={QUESTS.companions}>
+              <Text style={styles.companionsLabel}>Fellow adventurers</Text>
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                contentContainerStyle={styles.companionsRow}
+              >
+                {participants.map((p) => {
+                  const isMe = p.character.name === heroName;
+                  return (
+                    <View
+                      key={p.character.id}
+                      testID={`${QUESTS.companion}-${p.character.id}`}
+                      style={[styles.companionChip, isMe && styles.companionChipMe]}
+                    >
+                      <Ionicons
+                        name="person-circle-outline"
+                        size={14}
+                        color={isMe ? colors.gold : colors.textSecondary}
+                      />
+                      <Text
+                        style={[styles.companionName, isMe && styles.companionNameMe]}
+                        numberOfLines={1}
+                      >
+                        {p.character.name}
+                        {isMe ? " (you)" : ""}
+                      </Text>
+                    </View>
+                  );
+                })}
+              </ScrollView>
             </View>
           ) : null}
 
@@ -243,6 +281,34 @@ const styles = StyleSheet.create({
   },
   playingText: { ...typography.small, color: colors.textSecondary },
   playingName: { color: colors.goldSoft, fontWeight: "700" },
+  companions: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.sm,
+    paddingBottom: spacing.xs,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: colors.border,
+  },
+  companionsLabel: {
+    ...typography.tiny,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    marginBottom: spacing.xs,
+  },
+  companionsRow: { gap: spacing.sm, paddingRight: spacing.md },
+  companionChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    backgroundColor: colors.surface,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  companionChipMe: { backgroundColor: colors.goldDim, borderColor: colors.goldBorder },
+  companionName: { ...typography.small, color: colors.textSecondary, maxWidth: 140 },
+  companionNameMe: { color: colors.goldSoft, fontWeight: "700" },
   log: { padding: spacing.md, paddingBottom: spacing.lg, gap: spacing.md },
   introWrap: { alignItems: "center", padding: spacing.xl, gap: spacing.md },
   introText: { ...typography.body, color: colors.textSecondary, textAlign: "center", lineHeight: 22 },

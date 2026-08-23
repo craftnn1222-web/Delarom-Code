@@ -1,0 +1,49 @@
+{
+  "summary": "Iteration 35 — Validated Quest Companions (web + mobile), Faction Halls on mobile (threads + treasury + member gating), and My Shop Manager on mobile (create/add/edit/delete + economy auto-pricing UI). Backend sanity 7/7 passing. All 3 features work end-to-end on the intended surfaces. One minor testability gap fixed inline (delete-confirm modal on shop items now has testIDs). No functional bugs; parity between web and mobile for Quest Companions is intact.",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [
+        {"component": "MyShop delete-confirm modal", "issue": "Cancel / Remove buttons in the delete-confirmation Modal previously had no testID, so automated tests could not target the confirm button unambiguously. Fixed inline by adding testID shop-delete-cancel and shop-delete-confirm.", "testID": "shop-delete-cancel / shop-delete-confirm", "priority": "LOW"}
+      ],
+      "integration_issues": [],
+      "design_issues": [
+        {"screen": "shop-item-form auto-pricing city picker", "issues": ["City picker list appears to contain near-duplicate entries (e.g. 'Astra'Lun (aigraels)' shown twice, 'Ancestor Hall' vs 'Ancestorhall', 'Bellkeep' vs 'Bellwright'). May be legitimate seeded data but worth an admin data audit — not a mobile-code bug."]}
+      ],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iter35_mobile_features.py",
+    "/app/test_reports/pytest/iter35_mobile_features.xml"
+  ],
+  "action_items": [
+    "(Optional data cleanup) Audit ardent-legion membership rows vs member_count — the faction shows member_count=0 despite 15 pre-existing threads authored by Ausar Veltraus. Likely orphaned data from a previous test iteration; not a code bug.",
+    "(Optional data cleanup) City picker shows near-duplicate city names in some nations; consider slug de-dup or clearer disambiguation labels."
+  ],
+  "critical_code_review_comments": [
+    "/app/mobile/app/(tabs)/realm/my-shop.tsx delete-confirm Modal buttons had no testID; addressed in this iteration.",
+    "PUT /api/items/{item_id} requires the full ItemCreate body (name/description/category/etc.). This is a partial-update anti-pattern — clients must round-trip every field to change a single one. Consider accepting a partial update model."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter35_mobile_features.py",
+    "/app/mobile/app/(tabs)/realm/my-shop.tsx"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (web Quest Companions + mobile Quest Companions + mobile Faction Halls + mobile My Shop scenarios)"},
+  "test_credentials": "Admin craftnn1222@gmail.com / admin123. Used active hero 'Ausar Veltraus' (a35a8ce2-71db-467c-8ad0-451fe9433a87) to test faction join+donate+new-thread+reply on ardent-legion, and 'Admin Buyer' (f164fc2d) as shop owner for MyShop tests.",
+  "seed_data_creation": "Cleaned up TEST_iter35 items via direct API DELETE after mobile add/edit UI verification. Left the joined membership + one TEST_iter35 thread + one reply on ardent-legion (safe test data).",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Quest Companions (web+mobile), Faction Halls (mobile), and My Shop Manager (mobile) all working. Regression file: /app/backend/tests/test_iter35_mobile_features.py. IMPORTANT: 'active character' /api/characters/active returns null for admin because the mobile stores active hero client-side; switching heroes on mobile is done via the dashboard hero-switcher (testID dashboard-switch-hero-button + dashboard-hero-option-<id>). Auto-price 'no active trade contract' preview is EXPECTED per task note — do not treat as a bug. Faction non-member state hides donate/new-thread buttons correctly; entering a thread page as a non-member still renders the thread-screen container but the API returns 200 for admin because ANOTHER of admin's characters (Ausar Veltraus) is/was a member — behavior is correct given the data.",
+  "rca of the issue": ""
+}

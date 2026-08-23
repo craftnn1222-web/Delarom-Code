@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useCallback } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { getQuest, getQuestActions, submitQuestAction, getMyQuests } from '../utils/api';
+import { getQuest, getQuestActions, submitQuestAction, getMyQuests, getQuestParticipants } from '../utils/api';
 import { toast } from 'sonner';
 import AnimatedBackground from '../components/AnimatedBackground';
 import Navbar from '../components/Navbar';
 import { Button } from '../components/ui/button';
 import { Textarea } from '../components/ui/textarea';
-import { ArrowLeft, Sparkles, Coins, Lock, UserCircle } from 'lucide-react';
+import { ArrowLeft, Sparkles, Coins, Lock, UserCircle, Users } from 'lucide-react';
 
 const QuestPlay = () => {
   const { questId } = useParams();
@@ -15,6 +15,7 @@ const QuestPlay = () => {
   const [accepted, setAccepted] = useState(false);
   const [acceptanceStatus, setAcceptanceStatus] = useState(null);
   const [character, setCharacter] = useState(null);
+  const [participants, setParticipants] = useState([]);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [actionText, setActionText] = useState('');
@@ -30,8 +31,13 @@ const QuestPlay = () => {
 
   const fetchAll = useCallback(async () => {
     try {
-      const [questRes, mineRes] = await Promise.all([getQuest(questId), getMyQuests()]);
+      const [questRes, mineRes, partsRes] = await Promise.all([
+        getQuest(questId),
+        getMyQuests(),
+        getQuestParticipants(questId).catch(() => ({ data: [] })),
+      ]);
       setQuest(questRes.data);
+      setParticipants(partsRes.data || []);
       const entry = (mineRes.data || []).find((m) => m.quest?.id === questId);
       if (entry) {
         setAccepted(true);
@@ -157,6 +163,43 @@ const QuestPlay = () => {
           </div>
         ) : (
           <>
+            {/* Fellow adventurers on this quest */}
+            {participants.length > 0 && (
+              <div className="glass-dark p-6 rounded-xl mb-6" data-testid="quest-companions-panel">
+                <h2 className="text-lg font-bold text-purple-300 mb-3 flex items-center gap-2">
+                  <Users className="w-5 h-5" />
+                  Fellow Adventurers ({participants.length})
+                </h2>
+                <div className="grid sm:grid-cols-2 gap-3">
+                  {participants.map((p) => {
+                    const isMe = p.character?.id === character?.id;
+                    const done = p.acceptance?.status === 'completed';
+                    return (
+                      <div
+                        key={p.character?.id || p.acceptance?.id}
+                        className={`flex items-center gap-3 p-3 rounded-lg border ${isMe ? 'border-amber-500/50 bg-amber-900/15' : 'border-purple-500/20 bg-black/20'}`}
+                        data-testid={`quest-companion-${p.character?.id}`}
+                      >
+                        <UserCircle className={`w-8 h-8 flex-shrink-0 ${isMe ? 'text-amber-400' : 'text-purple-300'}`} />
+                        <div className="min-w-0 flex-1">
+                          <p className={`font-semibold truncate ${isMe ? 'text-amber-200' : 'text-white'}`}>
+                            {p.character?.name}
+                            {isMe && <span className="ml-1 text-xs text-amber-300/80">(you)</span>}
+                          </p>
+                          <p className="text-xs text-gray-400 truncate capitalize">
+                            {p.character?.race} · {p.character?.class}
+                          </p>
+                        </div>
+                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold ${done ? 'bg-green-500/20 text-green-400' : 'bg-blue-500/20 text-blue-300'}`}>
+                          {done ? 'Done' : 'Questing'}
+                        </span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+
             {/* Scene feed */}
             <div className="glass-dark p-6 rounded-xl mb-6">
               <h2 className="text-2xl font-bold text-purple-300 mb-4">Quest Scene</h2>

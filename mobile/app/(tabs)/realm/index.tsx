@@ -18,6 +18,15 @@ const ENTRIES = [
     testID: REALM.marketplaceLink,
   },
   {
+    key: "my-shop",
+    label: "My Shop",
+    hint: "Open a shop & sell your gear",
+    icon: "cube" as const,
+    color: colors.green,
+    href: "/(tabs)/realm/my-shop" as const,
+    testID: REALM.myShopLink,
+  },
+  {
     key: "factions",
     label: "Factions",
     hint: "Pledge your blade to a cause",
