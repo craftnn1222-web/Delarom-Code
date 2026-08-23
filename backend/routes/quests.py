@@ -425,7 +425,13 @@ def attach_quest_routes(
         for acc in acceptances:
             quest_doc = await db.quests.find_one({"id": acc['quest_id']}, {"_id": 0})
             if quest_doc:
-                char_doc = await db.characters.find_one({"id": acc['character_id']}, {"_id": 0})
+                # Lightweight character projection — clients only need id/name/race/class
+                # here. Excluding portrait_url avoids shipping multi-MB base64 portraits
+                # in this list payload (kept the response small for web + mobile My Quests).
+                char_doc = await db.characters.find_one(
+                    {"id": acc['character_id']},
+                    {"_id": 0, "id": 1, "name": 1, "race": 1, "character_class": 1}
+                )
                 if isinstance(quest_doc.get('created_at'), str):
                     quest_doc['created_at'] = datetime.fromisoformat(quest_doc['created_at'])
                 if isinstance(acc.get('accepted_at'), str):

@@ -13,6 +13,7 @@ import Characters from './pages/Characters';
 import CharacterEquipment from './pages/CharacterEquipment';
 import QuestBoard from './pages/QuestBoard';
 import MyQuests from './pages/MyQuests';
+import QuestPlay from './pages/QuestPlay';
 import Marketplace from './pages/Marketplace';
 import MyShop from './pages/MyShop';
 import Forums from './pages/Forums';
@@ -60,6 +61,7 @@ function App() {
           <Route path="/characters/:characterId/equipment" element={<ProtectedRoute><CharacterEquipment /></ProtectedRoute>} />
           <Route path="/quests" element={<ProtectedRoute><QuestBoard /></ProtectedRoute>} />
           <Route path="/my-quests" element={<ProtectedRoute><MyQuests /></ProtectedRoute>} />
+          <Route path="/quests/:questId/play" element={<ProtectedRoute><QuestPlay /></ProtectedRoute>} />
           <Route path="/marketplace" element={<ProtectedRoute><Marketplace /></ProtectedRoute>} />
           <Route path="/my-shop" element={<ProtectedRoute><MyShop /></ProtectedRoute>} />
           <Route path="/forums" element={<ProtectedRoute><Forums /></ProtectedRoute>} />

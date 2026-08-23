@@ -234,7 +234,15 @@ export interface AcceptedQuest {
   character?: { id: string; name: string } | null;
 }
 
-export const QuestApi = {
+export interface QuestAction {
+  id: string;
+  quest_id: string;
+  character_name: string;
+  action_text: string;
+  ai_response?: string | null;
+  turn_number: number;
+  created_at: string;
+}export const QuestApi = {
   list: (status = "open") => api.get<Quest[]>(`/quests?status=${status}`),
   get: (id: string) => api.get<Quest>(`/quests/${id}`),
   accept: (id: string, character_id: string) =>
@@ -242,6 +250,12 @@ export const QuestApi = {
       character_id,
     }),
   myAccepted: () => api.get<AcceptedQuest[]>("/quests/my-quests/accepted"),
+  actions: (id: string) => api.get<QuestAction[]>(`/quests/${id}/actions`),
+  submitAction: (id: string, action_text: string) =>
+    api.post<{ action_id: string; ai_response: string; turn_number: number }>(
+      `/quests/${id}/actions`,
+      { action_text },
+    ),
 };
 
 // ---------------- Shops / Marketplace ----------------

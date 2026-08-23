@@ -161,6 +161,10 @@ export const getMyCreatedQuests = () => api.get('/quests/my-quests/created');
 export const getQuestParticipants = (questId) => api.get(`/quests/${questId}/participants`);
 export const creatorCompleteParticipant = (questId, acceptanceId) =>
   api.post(`/quests/${questId}/participants/${acceptanceId}/complete`);
+// Quest Play — roleplay scene for an accepted quest (AI Quest Master responds)
+export const getQuestActions = (questId) => api.get(`/quests/${questId}/actions`);
+export const submitQuestAction = (questId, action_text) =>
+  api.post(`/quests/${questId}/actions`, { action_text });
 
 // Wallet
 export const getWallet = () => api.get('/wallet');

@@ -426,6 +426,16 @@ A fantasy-world exploration / roleplay site set in the "Continents of Delarom" u
 - One -8 sentiment monarch insult → reputation in target nation dropped to "disliked" (-30) → diplomatic stance shifted neutral→tense (-32) → 2 cascades queued (gossip + court news) → 2 world events recorded (royal_insult + stance_change).
 - Further hits push reputation to "notorious" (-55) → hostility roll fires at 25% per scene.
 
+## Quest Play — roleplay an accepted quest in its own scene (2026-08-23)
+Cross-platform feature: players can roleplay an ACCEPTED quest in a dedicated scene where the AI Quest Master narrates and responds to each action. Backend engine already existed; this shipped the web + mobile UI/routing/API clients.
+- **Backend (no new routes)**: reused `GET /api/quests/{id}`, `GET /api/quests/{id}/actions`, `POST /api/quests/{id}/actions` (requires acceptance with status `accepted`; returns `{action_id, ai_response, turn_number}`; opening narration stored as turn 0 with action_text `[Quest Opening]`).
+- **Backend perf fix**: `GET /api/quests/my-quests/accepted` now projects the character to lightweight fields only (`id, name, race, character_class`). Previously it embedded the full character doc whose `portrait_url` is a ~2.5 MB base64 data URL → list payload was ~5 MB; now ~5 KB.
+- **Web**: new `pages/QuestPlay.js` at route `/quests/:questId/play` (header/context, "Playing as", scene feed, action input; completed → read-only banner; not-accepted → notice + link to board). "Enter Scene" CTA added to active quests on `MyQuests.js`. New api methods `getQuestActions` / `submitQuestAction`.
+- **Mobile**: new `app/(tabs)/quests/play/[id].tsx` (chat-style scene modeled on `rp.tsx`), "Enter Scene" button on the accepted quest detail screen, `QuestApi.actions` / `QuestApi.submitAction`, testIds added.
+- **Verified**: testing_agent iteration_34 — backend 7/7 pytest (`/app/backend/tests/test_quest_play.py`), web + mobile all scenarios pass, parity confirmed.
+- **KNOWN ISSUE (observed, not fixed — needs decision)**: while the city/location image-generation batch is running it saturates the backend event loop — API latency spikes to 10–45 s per request, making the app feel broken. Batch was temporarily stopped for testing then resumed (user wants it to finish). Consider throttling/offloading the batcher so it doesn't block request latency.
+- **SEPARATE STORAGE ISSUE (out of scope, backlog)**: character `portrait_url` is stored as base64 in the character document — bloats every `/characters` and `/characters/{id}` response. Should migrate to blob/reference storage like city/location images did.
+
 ## Backlog (P1 → P3)
 - **P1**: Refactor `server.py` (3900+ lines) into route modules.
 - **P1 (security)**: Migrate auth token from `localStorage` to httpOnly cookies (23 instances across `api.js`, `Login.js`, `AdminDashboard.js`, `AuthContext.js`, `ProtectedRoute.js`).

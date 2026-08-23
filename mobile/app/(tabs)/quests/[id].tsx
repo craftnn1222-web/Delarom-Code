@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams } from "expo-router";
+import { router, useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
 import { ScrollView, StyleSheet, Text, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
@@ -100,9 +100,20 @@ export default function QuestDetailScreen() {
           </View>
 
           {accepted ? (
-            <View style={styles.acceptedBanner}>
-              <Ionicons name="checkmark-circle" size={18} color={colors.green} />
-              <Text style={styles.acceptedText}>You&apos;ve accepted this quest</Text>
+            <View style={styles.acceptedBlock}>
+              <View style={styles.acceptedBanner}>
+                <Ionicons name="checkmark-circle" size={18} color={colors.green} />
+                <Text style={styles.acceptedText}>You&apos;ve accepted this quest</Text>
+              </View>
+              <Button
+                title="Enter Scene"
+                icon="book-outline"
+                onPress={() =>
+                  router.push({ pathname: "/(tabs)/quests/play/[id]", params: { id: quest.id } })
+                }
+                testID={QUESTS.playButton}
+                style={styles.accept}
+              />
             </View>
           ) : noHero ? (
             <Text style={styles.hint}>Create a hero before accepting quests.</Text>
@@ -162,6 +173,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: colors.green,
   },
+  acceptedBlock: { marginTop: 0 },
   acceptedText: { ...typography.bodyStrong, color: colors.green },
   hint: { ...typography.small, color: colors.textMuted, marginTop: spacing.xl, textAlign: "center" },
   accept: { marginTop: spacing.xl },

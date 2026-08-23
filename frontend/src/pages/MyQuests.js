@@ -1,10 +1,11 @@
 import React, { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { getMyQuests } from '../utils/api';
 import { toast } from 'sonner';
 import AnimatedBackground from '../components/AnimatedBackground';
 import Navbar from '../components/Navbar';
 import { Button } from '../components/ui/button';
-import { Check, Coins, Clock, Trophy } from 'lucide-react';
+import { Check, Coins, Clock, Trophy, Sparkles } from 'lucide-react';
 
 const MyQuests = () => {
   const [myQuests, setMyQuests] = useState([]);
@@ -106,6 +107,15 @@ const MyQuests = () => {
                     </div>
                   </div>
 
+                  <Link to={`/quests/${quest.id}/play`} className="block mb-2">
+                    <Button
+                      className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
+                      data-testid={`enter-quest-scene-${quest.id}`}
+                    >
+                      <Sparkles className="w-4 h-4 mr-2" />
+                      Enter Scene
+                    </Button>
+                  </Link>
                   <Button
                     onClick={handleCompleteQuest}
                     className="w-full bg-gradient-to-r from-gray-600 to-gray-700 hover:from-gray-700 hover:to-gray-800"

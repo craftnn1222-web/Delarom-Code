@@ -66,6 +66,11 @@ export const QUESTS = {
   card: "quest-card",
   detailScreen: "quest-detail-screen",
   acceptButton: "quest-accept-button",
+  playButton: "quest-play-button",
+  playScreen: "quest-play-screen",
+  playInput: "quest-play-input",
+  playSendButton: "quest-play-send-button",
+  playLogEntry: "quest-play-log-entry",
 };
 
 export const MARKET = {
