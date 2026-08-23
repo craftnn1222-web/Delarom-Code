@@ -189,3 +189,45 @@ export const PAYOUTS = {
   empty: "shop-payouts-empty",
   loading: "shop-payouts-loading",
 };
+
+export const BUYOFFERS = {
+  section: "shop-buy-offers-section",
+  treasuryBalance: "treasury-balance",
+  amountInput: "treasury-amount-input",
+  deposit: "treasury-deposit-btn",
+  withdraw: "treasury-withdraw-btn",
+  offer: (id) => `buy-offer-${id}`,
+  accept: (id) => `accept-offer-${id}`,
+  decline: (id) => `decline-offer-${id}`,
+  empty: "buy-offers-empty",
+};
+
+export const OFFERINGS = {
+  screen: "faction-offerings-screen",
+  button: "faction-offerings-button",
+  addButton: "offering-add-button",
+  modeCatalogue: "offering-mode-catalogue",
+  modeCustom: "offering-mode-custom",
+  goodPicker: "offering-good-picker",
+  customName: "offering-custom-name",
+  customCategory: "offering-custom-category",
+  customUnit: "offering-custom-unit",
+  baseCost: "offering-base-cost",
+  capacity: "offering-capacity",
+  description: "offering-description",
+  save: "offering-save",
+  cancel: "offering-cancel",
+  card: (slug) => `offering-card-${slug}`,
+  remove: (slug) => `offering-remove-${slug}`,
+  empty: "offerings-empty",
+};
+
+export const SELL = {
+  button: "sell-to-shop-button",
+  modal: "sell-offer-modal",
+  itemOption: (id) => `sell-item-${id}`,
+  priceInput: "sell-price-input",
+  submit: "sell-offer-submit",
+  cancel: "sell-offer-cancel",
+  empty: "sell-no-items",
+};

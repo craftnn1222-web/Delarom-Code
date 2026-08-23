@@ -15,6 +15,7 @@ import RestockSection from '../components/RestockSection';
 import ShopCustomerFeed from '../components/ShopCustomerFeed';
 import ShopStaffPanel from '../components/ShopStaffPanel';
 import ShopPayoutsPanel from '../components/ShopPayoutsPanel';
+import ShopBuyOffersPanel from '../components/ShopBuyOffersPanel';
 
 const MyShop = () => {
   const [shop, setShop] = useState(null);
@@ -581,6 +582,9 @@ const MyShop = () => {
             <ShopPayoutsPanel shopId={shop.id} />
           </div>
         )}
+
+        {/* Two-way commerce — buy offers from players & NPCs */}
+        {shop && <ShopBuyOffersPanel shopId={shop.id} className="mt-6" />}
 
         {/* Delete Confirmation Dialog */}
         <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

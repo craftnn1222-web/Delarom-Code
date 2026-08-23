@@ -467,6 +467,19 @@ Shop owners can hire employees and see a per-cycle payout summary.
 - **Web**: `components/ShopStaffPanel.js` + `ShopPayoutsPanel.js`, wired into `pages/MyShop.js`. **Mobile**: `src/components/ShopStaffSection.tsx` + `ShopPayoutsSection.tsx` in `app/(tabs)/realm/my-shop.tsx`; testIds `STAFF`/`PAYOUTS`.
 - **Verified** iteration_38: backend **23/23 pytest**, web + mobile parity confirmed, no bugs. (Non-blocking notes: ledger wages-total relies on `shop_wage` being stored negative — currently correct; `EMPLOYEE_WAGE=50` duplicated across web/mobile/backend.)
 
+## Custom Faction Offerings + Two-way Commerce (shipped 2026-08-23, iteration_39 — web + mobile)
+Two economy features, both with full web/mobile parity.
+
+**1. Custom faction offerings** — the Offerings tab (web `FactionSpecialtiesTab`; mobile new `faction-offerings.tsx` reached via an "Offerings" button) now lets a leader/admin add a product EITHER from the goods catalogue OR by typing a brand-new one (name + category + unit + base cost). A typed product is coined as a real tradeable good (`is_custom:true`) via `POST /api/economy/factions/{slug}/offerings/custom`, so it flows through city prices / trade routes like any canonical good.
+
+**2. Two-way commerce (buy offers)** — players and NPCs can now SELL to shops.
+- A player offers an inventory item at a proposed price (web Marketplace "Sell an item" dialog; mobile shop-detail "Sell an item" modal) → `POST /api/shops/{id}/buy-offers`.
+- The shop OWNER sees pending offers and Accepts/Declines them (web `ShopBuyOffersPanel`; mobile `ShopBuyOffersSection`, both on My Shop). Accept pays the seller, removes the item from the player's inventory (NPC = gold sink), and re-lists the item in the shop at ~1.25×.
+- **Payment comes from the shop TREASURY first, then the owner's personal gold** if the treasury is short. Owners fund the treasury via deposit/withdraw. Shop model gained `treasury:int=0`.
+- NPCs drop pending buy-offers on the ~6h economy tick (`generate_npc_buy_offers`); stale pending offers expire after ~18h (`expire_stale_buy_offers`). Tick order: payroll → NPC customers → restock → ledger → NPC buy-offers.
+- Backend: routes in `routes/shops.py` (treasury deposit/withdraw, buy-offers create/list/accept/decline, `GET /api/buy-offers/mine`) + `npc_economy.py`. Owner-only auth enforced; cross-shop access 403.
+- **Verified** iteration_39: backend 12/12 pytest, web + mobile parity, no blockers. (Non-blocking: `shop_buyback` txn not tagged with paid_from; custom-slug TOCTOU could use a unique index on `goods.slug`.)
+
 ## Backlog (P1 → P3)
 - **P1**: Refactor `server.py` (3900+ lines) into route modules.
 - **P1 (security)**: Migrate auth token from `localStorage` to httpOnly cookies (23 instances across `api.js`, `Login.js`, `AdminDashboard.js`, `AuthContext.js`, `ProtectedRoute.js`).

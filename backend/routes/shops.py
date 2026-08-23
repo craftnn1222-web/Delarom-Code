@@ -327,6 +327,222 @@ def attach_shop_routes(
         )
         return {"entries": entries, "totals": totals}
 
+    # ── Shop treasury (buy-back fund) ─────────────────────────────
+    class TreasuryBody(BaseModel):
+        amount: int
+
+    @api_router.post("/shops/{shop_id}/treasury/deposit")
+    async def deposit_treasury(
+        shop_id: str, body: TreasuryBody, current_user: User = Depends(get_current_user),
+    ):
+        await _owned_shop_or_error(shop_id, current_user)
+        amount = int(body.amount)
+        if amount <= 0:
+            raise HTTPException(status_code=400, detail="Enter a positive amount.")
+        if current_user.currency < amount:
+            raise HTTPException(status_code=400, detail="Not enough gold in your purse.")
+        await db.users.update_one({"id": current_user.id}, {"$inc": {"currency": -amount}})
+        await db.shops.update_one({"id": shop_id}, {"$inc": {"treasury": amount}})
+        await db.transactions.insert_one({
+            "id": str(uuid.uuid4()), "user_id": current_user.id, "amount": -amount,
+            "transaction_type": "shop_treasury_deposit",
+            "description": "Moved gold into shop treasury.", "related_id": shop_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        shop = await db.shops.find_one({"id": shop_id}, {"_id": 0, "treasury": 1})
+        return {"treasury": int(shop.get("treasury", 0))}
+
+    @api_router.post("/shops/{shop_id}/treasury/withdraw")
+    async def withdraw_treasury(
+        shop_id: str, body: TreasuryBody, current_user: User = Depends(get_current_user),
+    ):
+        shop_doc = await _owned_shop_or_error(shop_id, current_user)
+        amount = int(body.amount)
+        if amount <= 0:
+            raise HTTPException(status_code=400, detail="Enter a positive amount.")
+        if int(shop_doc.get("treasury", 0)) < amount:
+            raise HTTPException(status_code=400, detail="The treasury doesn't hold that much.")
+        await db.shops.update_one({"id": shop_id}, {"$inc": {"treasury": -amount}})
+        await db.users.update_one({"id": current_user.id}, {"$inc": {"currency": amount}})
+        await db.transactions.insert_one({
+            "id": str(uuid.uuid4()), "user_id": current_user.id, "amount": amount,
+            "transaction_type": "shop_treasury_withdraw",
+            "description": "Withdrew gold from shop treasury.", "related_id": shop_id,
+            "created_at": datetime.now(timezone.utc).isoformat(),
+        })
+        shop = await db.shops.find_one({"id": shop_id}, {"_id": 0, "treasury": 1})
+        return {"treasury": int(shop.get("treasury", 0))}
+
+    # ── Buy offers (players & NPCs sell to shops; owner approves) ──
+    class BuyOfferBody(BaseModel):
+        character_id: str
+        inventory_item_id: str
+        proposed_price: int
+
+    @api_router.post("/shops/{shop_id}/buy-offers")
+    async def create_buy_offer(
+        shop_id: str, body: BuyOfferBody, current_user: User = Depends(get_current_user),
+    ):
+        """A player offers one inventory item to a shop for a proposed price."""
+        shop_doc = await db.shops.find_one({"id": shop_id}, {"_id": 0})
+        if not shop_doc:
+            raise HTTPException(status_code=404, detail="Shop not found")
+        if shop_doc.get("owner_id") == current_user.id:
+            raise HTTPException(status_code=400, detail="You can't sell to your own shop.")
+        price = int(body.proposed_price)
+        if price <= 0:
+            raise HTTPException(status_code=400, detail="Name a positive price.")
+        char = await db.characters.find_one(
+            {"id": body.character_id, "user_id": current_user.id}, {"_id": 0},
+        )
+        if not char:
+            raise HTTPException(status_code=404, detail="Character not found or not yours")
+        inv_item = next(
+            (i for i in (char.get("inventory") or []) if i.get("id") == body.inventory_item_id), None,
+        )
+        if not inv_item:
+            raise HTTPException(status_code=404, detail="That item isn't in your inventory.")
+        offer = {
+            "id": str(uuid.uuid4()),
+            "shop_id": shop_id,
+            "seller_type": "player",
+            "seller_user_id": current_user.id,
+            "seller_character_id": char["id"],
+            "seller_name": char.get("name", current_user.username),
+            "inventory_item_id": inv_item["id"],
+            "item": {
+                "name": inv_item.get("name", "item"),
+                "description": inv_item.get("description", ""),
+                "category": inv_item.get("category", "goods"),
+                "item_type": inv_item.get("item_type", "equipment"),
+                "equipment_slot": inv_item.get("equipment_slot"),
+                "stat_bonuses": inv_item.get("stat_bonuses", {}),
+            },
+            "proposed_price": price,
+            "status": "pending",
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "resolved_at": None,
+        }
+        await db.shop_buy_offers.insert_one(offer)
+        offer.pop("_id", None)
+        return offer
+
+    @api_router.get("/shops/{shop_id}/buy-offers")
+    async def list_buy_offers(shop_id: str, current_user: User = Depends(get_current_user)):
+        shop_doc = await _owned_shop_or_error(shop_id, current_user)
+        offers = await db.shop_buy_offers.find(
+            {"shop_id": shop_id, "status": "pending"}, {"_id": 0},
+        ).sort("created_at", -1).to_list(100)
+        return {"treasury": int(shop_doc.get("treasury", 0)), "offers": offers}
+
+    @api_router.get("/buy-offers/mine")
+    async def my_buy_offers(current_user: User = Depends(get_current_user)):
+        return await db.shop_buy_offers.find(
+            {"seller_user_id": current_user.id}, {"_id": 0},
+        ).sort("created_at", -1).to_list(50)
+
+    async def _resolve_offer_or_error(shop_id: str, offer_id: str, user):
+        await _owned_shop_or_error(shop_id, user)
+        offer = await db.shop_buy_offers.find_one(
+            {"id": offer_id, "shop_id": shop_id}, {"_id": 0},
+        )
+        if not offer:
+            raise HTTPException(status_code=404, detail="Offer not found")
+        if offer.get("status") != "pending":
+            raise HTTPException(status_code=400, detail="This offer was already resolved.")
+        return offer
+
+    @api_router.post("/shops/{shop_id}/buy-offers/{offer_id}/accept")
+    async def accept_buy_offer(
+        shop_id: str, offer_id: str, current_user: User = Depends(get_current_user),
+    ):
+        shop_doc = await _owned_shop_or_error(shop_id, current_user)
+        offer = await _resolve_offer_or_error(shop_id, offer_id, current_user)
+        owner_id = shop_doc["owner_id"]
+        amount = int(offer["proposed_price"])
+        now = datetime.now(timezone.utc).isoformat()
+
+        # Player offers: item must still be in the seller's inventory.
+        if offer.get("seller_type") == "player":
+            seller_char = await db.characters.find_one(
+                {"id": offer.get("seller_character_id")}, {"_id": 0, "inventory": 1},
+            )
+            inv = (seller_char or {}).get("inventory") or []
+            if not any(i.get("id") == offer.get("inventory_item_id") for i in inv):
+                await db.shop_buy_offers.update_one(
+                    {"id": offer_id}, {"$set": {"status": "expired", "resolved_at": now}},
+                )
+                raise HTTPException(status_code=400, detail="The seller no longer holds that item.")
+
+        # Pay from the shop treasury first, then the owner's personal gold.
+        treasury = int(shop_doc.get("treasury", 0))
+        if treasury >= amount:
+            await db.shops.update_one({"id": shop_id}, {"$inc": {"treasury": -amount}})
+            paid_from = "treasury"
+        else:
+            owner = await db.users.find_one({"id": owner_id}, {"_id": 0, "currency": 1})
+            if not owner or int(owner.get("currency", 0)) < amount:
+                raise HTTPException(
+                    status_code=400,
+                    detail="Not enough gold — top up the shop treasury or your purse.",
+                )
+            await db.users.update_one({"id": owner_id}, {"$inc": {"currency": -amount}})
+            paid_from = "owner"
+
+        await db.transactions.insert_one({
+            "id": str(uuid.uuid4()), "user_id": owner_id, "amount": -amount,
+            "transaction_type": "shop_buyback",
+            "description": f"Bought {offer['item']['name']} from {offer.get('seller_name', 'a seller')}.",
+            "related_id": shop_id, "created_at": now,
+        })
+
+        # Player seller pockets the gold and loses the item.
+        if offer.get("seller_type") == "player" and offer.get("seller_user_id"):
+            await db.users.update_one(
+                {"id": offer["seller_user_id"]}, {"$inc": {"currency": amount}},
+            )
+            await db.characters.update_one(
+                {"id": offer["seller_character_id"]},
+                {"$pull": {"inventory": {"id": offer["inventory_item_id"]}}},
+            )
+            await db.transactions.insert_one({
+                "id": str(uuid.uuid4()), "user_id": offer["seller_user_id"], "amount": amount,
+                "transaction_type": "item_sold",
+                "description": f"Sold {offer['item']['name']} to {shop_doc['name']}.",
+                "related_id": shop_id, "created_at": now,
+            })
+
+        # Re-list the acquired item in the shop at a resale markup.
+        it = offer["item"]
+        resale = max(amount + 1, int(round(amount * 1.25)))
+        resale_item = {
+            "id": str(uuid.uuid4()), "shop_id": shop_id,
+            "name": it["name"], "description": it.get("description", ""),
+            "price": resale, "stock": 1, "category": it.get("category", "goods"),
+            "item_type": it.get("item_type", "equipment"),
+            "equipment_slot": it.get("equipment_slot"),
+            "stat_bonuses": it.get("stat_bonuses", {}),
+            "is_auto_priced": False, "auto_restock": False,
+            "created_at": now,
+        }
+        await db.items.insert_one(dict(resale_item))
+        resale_item.pop("_id", None)
+        await db.shop_buy_offers.update_one(
+            {"id": offer_id}, {"$set": {"status": "accepted", "resolved_at": now}},
+        )
+        return {"ok": True, "paid_from": paid_from, "resale_item_id": resale_item["id"], "resale_price": resale}
+
+    @api_router.post("/shops/{shop_id}/buy-offers/{offer_id}/decline")
+    async def decline_buy_offer(
+        shop_id: str, offer_id: str, current_user: User = Depends(get_current_user),
+    ):
+        await _resolve_offer_or_error(shop_id, offer_id, current_user)
+        await db.shop_buy_offers.update_one(
+            {"id": offer_id},
+            {"$set": {"status": "declined", "resolved_at": datetime.now(timezone.utc).isoformat()}},
+        )
+        return {"ok": True}
+
 
 
 

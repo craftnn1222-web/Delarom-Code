@@ -10,6 +10,7 @@ by `world_state_service` whenever a world event is recorded.
 from __future__ import annotations
 
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
@@ -41,6 +42,16 @@ class UpsertSpecialtyBody(BaseModel):
     capacity: int = Field(default=50, ge=0, le=10_000)
     description: str = Field(default="", max_length=400)
     reason: str = Field(default="manual", max_length=160)
+
+
+class CustomOfferingBody(BaseModel):
+    """Faction leader coins a brand-new tradeable good and lists it as an offering."""
+    name: str = Field(min_length=2, max_length=60)
+    category: str = Field(default="custom", max_length=40)
+    unit: str = Field(default="per unit", max_length=40)
+    base_cost: int = Field(ge=1, le=1_000_000)
+    capacity: int = Field(default=50, ge=0, le=10_000)
+    description: str = Field(default="", max_length=400)
 
 
 class CreateContractBody(BaseModel):
@@ -394,6 +405,51 @@ def attach_economy_routes(
         faction = await _ensure_faction_leader(faction_slug, current_user)
         ok = await EconomyService(db).remove_specialty(faction["id"], good_slug)
         return {"ok": bool(ok)}
+
+    @api_router.post("/economy/factions/{faction_slug}/offerings/custom")
+    async def leader_add_custom_offering(
+        faction_slug: str,
+        payload: CustomOfferingBody,
+        current_user: User = Depends(get_current_user),
+    ):
+        """Coin a brand-new good from a typed name and list it as this faction's
+        offering. The good enters the canonical catalogue (is_custom=True) so it
+        flows through the full economy (city prices, trade routes)."""
+        faction = await _ensure_faction_leader(faction_slug, current_user)
+        base = re.sub(r"[^a-z0-9]+", "-", payload.name.strip().lower()).strip("-")[:48]
+        if not base:
+            raise HTTPException(status_code=400, detail="Give the product a real name.")
+        # Ensure a unique slug.
+        slug = base
+        n = 2
+        while await db.goods.find_one({"slug": slug}, {"_id": 0, "slug": 1}):
+            slug = f"{base}-{n}"
+            n += 1
+        good_doc = {
+            "id": str(uuid.uuid4()),
+            "slug": slug,
+            "name": payload.name.strip(),
+            "category": (payload.category or "custom").strip().lower(),
+            "unit": (payload.unit or "per unit").strip(),
+            "default_base_cost": int(payload.base_cost),
+            "is_service": False,
+            "tags": ["custom"],
+            "is_custom": True,
+            "created_by_faction": faction["slug"],
+            "created_at": _now_iso(),
+        }
+        await db.goods.insert_one(dict(good_doc))
+        good_doc.pop("_id", None)
+        spec = await EconomyService(db).upsert_specialty(
+            faction_id=faction["id"],
+            faction_slug=faction["slug"],
+            good_slug=slug,
+            base_cost=payload.base_cost,
+            capacity=payload.capacity,
+            description=payload.description,
+            reason=f"Custom offering coined by leader of {faction_slug}",
+        )
+        return {"good": good_doc, "specialty": spec}
 
     # ─── LEADER-managed trade routes ─────────────────────────
     # Mirrors `/economy/admin/contracts` but scoped to one faction. The

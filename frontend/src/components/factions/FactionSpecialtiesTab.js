@@ -2,7 +2,7 @@ import React, { useEffect, useState, useCallback } from 'react';
 import { Coins, TrendingUp, TrendingDown, Plus, Trash2, Pencil } from 'lucide-react';
 import { Button } from '../ui/button';
 import { toast } from 'sonner';
-import api from '../../utils/api';
+import api, { addFactionCustomOffering } from '../../utils/api';
 
 /**
  * Faction Specialties tab — shows the goods this faction produces (base cost
@@ -17,7 +17,7 @@ const FactionSpecialtiesTab = ({ factionSlug, canEdit }) => {
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [editingGood, setEditingGood] = useState(null);
-  const [form, setForm] = useState({ good_slug: '', base_cost: 50, capacity: 50, description: '' });
+  const [form, setForm] = useState({ good_slug: '', base_cost: 50, capacity: 50, description: '', mode: 'catalogue', name: '', category: '', unit: 'per unit' });
   const [busy, setBusy] = useState(false);
 
   const loadAll = useCallback(async () => {
@@ -40,7 +40,7 @@ const FactionSpecialtiesTab = ({ factionSlug, canEdit }) => {
 
   const openAdd = () => {
     setEditingGood(null);
-    setForm({ good_slug: catalogue[0]?.slug || '', base_cost: 50, capacity: 50, description: '' });
+    setForm({ good_slug: catalogue[0]?.slug || '', base_cost: 50, capacity: 50, description: '', mode: 'catalogue', name: '', category: '', unit: 'per unit' });
     setShowForm(true);
   };
 
@@ -51,30 +51,56 @@ const FactionSpecialtiesTab = ({ factionSlug, canEdit }) => {
       base_cost: s.base_cost || 0,
       capacity: s.capacity || 0,
       description: s.description || '',
+      mode: 'catalogue',
+      name: '',
+      category: '',
+      unit: 'per unit',
     });
     setShowForm(true);
   };
 
   const submit = async () => {
-    if (!form.good_slug || form.base_cost <= 0) {
-      toast.error('Pick a good and set a positive base cost.');
+    if (form.base_cost <= 0) {
+      toast.error('Set a positive base cost.');
       return;
     }
     setBusy(true);
     try {
-      await api.post(`/economy/factions/${factionSlug}/specialties`, {
-        faction_slug: factionSlug,
-        good_slug: form.good_slug,
-        base_cost: Number(form.base_cost),
-        capacity: Number(form.capacity || 50),
-        description: form.description || '',
-        reason: editingGood ? 'Leader adjustment' : 'Leader added offering',
-      });
-      toast.success(editingGood ? 'Specialty updated.' : 'Specialty added.');
+      if (!editingGood && form.mode === 'custom') {
+        if (!form.name.trim()) {
+          toast.error('Name your custom product.');
+          setBusy(false);
+          return;
+        }
+        await addFactionCustomOffering(factionSlug, {
+          name: form.name.trim(),
+          category: form.category.trim() || 'custom',
+          unit: form.unit.trim() || 'per unit',
+          base_cost: Number(form.base_cost),
+          capacity: Number(form.capacity || 50),
+          description: form.description || '',
+        });
+        toast.success('Custom offering coined.');
+      } else {
+        if (!form.good_slug) {
+          toast.error('Pick a good.');
+          setBusy(false);
+          return;
+        }
+        await api.post(`/economy/factions/${factionSlug}/specialties`, {
+          faction_slug: factionSlug,
+          good_slug: form.good_slug,
+          base_cost: Number(form.base_cost),
+          capacity: Number(form.capacity || 50),
+          description: form.description || '',
+          reason: editingGood ? 'Leader adjustment' : 'Leader added offering',
+        });
+        toast.success(editingGood ? 'Specialty updated.' : 'Specialty added.');
+      }
       setShowForm(false);
       await loadAll();
     } catch (err) {
-      toast.error(err.response?.data?.detail || 'Failed to save specialty');
+      toast.error(err.response?.data?.detail || 'Failed to save offering');
     } finally {
       setBusy(false);
     }
@@ -214,22 +240,82 @@ const FactionSpecialtiesTab = ({ factionSlug, canEdit }) => {
               {editingGood ? `Edit ${editingGood}` : 'Add New Offering'}
             </h3>
             <div className="space-y-3">
-              <div>
-                <label className="text-xs uppercase tracking-wider text-amber-200/70">Good</label>
-                <select
-                  value={form.good_slug}
-                  onChange={(e) => setForm({ ...form, good_slug: e.target.value })}
-                  disabled={!!editingGood}
-                  className="w-full bg-black/50 border border-amber-500/40 rounded p-2 text-sm text-amber-100 disabled:opacity-60"
-                  data-testid="specialty-form-good-select"
-                >
-                  {catalogue.map((g) => (
-                    <option key={g.slug} value={g.slug}>
-                      {g.name} ({g.category} · {g.unit})
-                    </option>
-                  ))}
-                </select>
-              </div>
+              {!editingGood && (
+                <div className="flex gap-2" data-testid="offering-mode-toggle">
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, mode: 'catalogue' })}
+                    className={`flex-1 text-xs py-2 rounded border ${form.mode === 'catalogue' ? 'bg-amber-600 text-black border-amber-500' : 'border-amber-500/40 text-amber-200'}`}
+                    data-testid="offering-mode-catalogue"
+                  >
+                    From catalogue
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setForm({ ...form, mode: 'custom' })}
+                    className={`flex-1 text-xs py-2 rounded border ${form.mode === 'custom' ? 'bg-amber-600 text-black border-amber-500' : 'border-amber-500/40 text-amber-200'}`}
+                    data-testid="offering-mode-custom"
+                  >
+                    Type your own
+                  </button>
+                </div>
+              )}
+              {(!editingGood && form.mode === 'custom') ? (
+                <>
+                  <div>
+                    <label className="text-xs uppercase tracking-wider text-amber-200/70">Product name</label>
+                    <input
+                      type="text"
+                      value={form.name}
+                      onChange={(e) => setForm({ ...form, name: e.target.value })}
+                      className="w-full bg-black/50 border border-amber-500/40 rounded p-2 text-sm text-amber-100"
+                      placeholder="e.g. Moonsteel Blades"
+                      data-testid="offering-custom-name"
+                    />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-xs uppercase tracking-wider text-amber-200/70">Category</label>
+                      <input
+                        type="text"
+                        value={form.category}
+                        onChange={(e) => setForm({ ...form, category: e.target.value })}
+                        className="w-full bg-black/50 border border-amber-500/40 rounded p-2 text-sm text-amber-100"
+                        placeholder="e.g. weapon"
+                        data-testid="offering-custom-category"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-xs uppercase tracking-wider text-amber-200/70">Unit</label>
+                      <input
+                        type="text"
+                        value={form.unit}
+                        onChange={(e) => setForm({ ...form, unit: e.target.value })}
+                        className="w-full bg-black/50 border border-amber-500/40 rounded p-2 text-sm text-amber-100"
+                        placeholder="e.g. per blade"
+                        data-testid="offering-custom-unit"
+                      />
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <div>
+                  <label className="text-xs uppercase tracking-wider text-amber-200/70">Good</label>
+                  <select
+                    value={form.good_slug}
+                    onChange={(e) => setForm({ ...form, good_slug: e.target.value })}
+                    disabled={!!editingGood}
+                    className="w-full bg-black/50 border border-amber-500/40 rounded p-2 text-sm text-amber-100 disabled:opacity-60"
+                    data-testid="specialty-form-good-select"
+                  >
+                    {catalogue.map((g) => (
+                      <option key={g.slug} value={g.slug}>
+                        {g.name} ({g.category} · {g.unit})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="text-xs uppercase tracking-wider text-amber-200/70">Base cost (g/unit)</label>

@@ -22,6 +22,7 @@ import { Header } from "@/src/components/Header";
 import { PickerField } from "@/src/components/PickerField";
 import { Pill } from "@/src/components/Pill";
 import { ErrorView, Loading } from "@/src/components/StateViews";
+import { ShopBuyOffersSection } from "@/src/components/ShopBuyOffersSection";
 import { ShopPayoutsSection } from "@/src/components/ShopPayoutsSection";
 import { ShopStaffSection } from "@/src/components/ShopStaffSection";
 import { TextField } from "@/src/components/TextField";
@@ -289,6 +290,7 @@ export default function MyShopScreen() {
           ) : null}
 
           {shop ? <ShopStaffSection shopId={shop.id} /> : null}
+          {shop ? <ShopBuyOffersSection shopId={shop.id} /> : null}
           {shop ? <ShopPayoutsSection shopId={shop.id} /> : null}
         </ScrollView>
       )}

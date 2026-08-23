@@ -1,10 +1,11 @@
 import React, { useEffect, useState, useCallback } from 'react';
-import { getShops, getShopItems, purchaseItem, getMyCharacters } from '../utils/api';
+import { getShops, getShopItems, purchaseItem, getMyCharacters, createShopBuyOffer } from '../utils/api';
 import { toast } from 'sonner';
 import { Link } from 'react-router-dom';
 import AnimatedBackground from '../components/AnimatedBackground';
 import Navbar from '../components/Navbar';
 import { Button } from '../components/ui/button';
+import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Label } from '../components/ui/label';
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from '../components/ui/dialog';
@@ -19,6 +20,11 @@ const Marketplace = () => {
   const [loading, setLoading] = useState(true);
   const [purchasingItems, setPurchasingItems] = useState({}); // Track per-item purchasing state
   const [characterSelectDialog, setCharacterSelectDialog] = useState({ open: false, item: null });
+  const [sellDialog, setSellDialog] = useState({ open: false });
+  const [sellCharId, setSellCharId] = useState('');
+  const [sellInvItemId, setSellInvItemId] = useState('');
+  const [sellPrice, setSellPrice] = useState('');
+  const [sellBusy, setSellBusy] = useState(false);
 
   const fetchCharacters = useCallback(async () => {
     try {
@@ -132,6 +138,36 @@ const Marketplace = () => {
 
   const currentShop = shops.find(s => s.id === selectedShop);
 
+  const openSellDialog = () => {
+    setSellCharId(characters[0]?.id || '');
+    setSellInvItemId('');
+    setSellPrice('');
+    setSellDialog({ open: true });
+  };
+
+  const submitSellOffer = async () => {
+    if (!sellCharId || !sellInvItemId) { toast.error('Pick a character and an item'); return; }
+    const price = parseInt(sellPrice, 10);
+    if (!price || price <= 0) { toast.error('Name a positive price'); return; }
+    setSellBusy(true);
+    try {
+      await createShopBuyOffer(selectedShop, {
+        character_id: sellCharId,
+        inventory_item_id: sellInvItemId,
+        proposed_price: price,
+      });
+      toast.success('Offer sent — the shopkeeper will decide.');
+      setSellDialog({ open: false });
+    } catch (error) {
+      toast.error(error.response?.data?.detail || 'Could not send offer');
+    } finally {
+      setSellBusy(false);
+    }
+  };
+
+  const sellChar = characters.find(c => c.id === sellCharId);
+  const sellInventory = sellChar?.inventory || [];
+
   if (loading) {
     return (
       <div className="min-h-screen relative">
@@ -223,9 +259,21 @@ const Marketplace = () => {
             <div className="lg:col-span-2">
               {currentShop && (
                 <div className="glass-dark p-6 rounded-xl mb-6">
-                  <h2 className="text-2xl font-bold text-purple-300 mb-2">{currentShop.name}</h2>
-                  <p className="text-gray-400 mb-1">{currentShop.description}</p>
-                  <p className="text-sm text-purple-400">Owner: {currentShop.owner_username} • {currentShop.nation}</p>
+                  <div className="flex items-start justify-between gap-3 flex-wrap">
+                    <div>
+                      <h2 className="text-2xl font-bold text-purple-300 mb-2">{currentShop.name}</h2>
+                      <p className="text-gray-400 mb-1">{currentShop.description}</p>
+                      <p className="text-sm text-purple-400">Owner: {currentShop.owner_username} • {currentShop.nation}</p>
+                    </div>
+                    <Button
+                      onClick={openSellDialog}
+                      className="bg-gradient-to-r from-amber-600 to-yellow-600 hover:from-amber-700 hover:to-yellow-700 text-black"
+                      data-testid="sell-to-shop-btn"
+                    >
+                      <Coins className="w-4 h-4 mr-2" />
+                      Sell an item
+                    </Button>
+                  </div>
                 </div>
               )}
 
@@ -301,7 +349,7 @@ const Marketplace = () => {
             
             {characters.length === 0 ? (
               <div className="text-center py-6">
-                <p className="text-gray-400 mb-4">You don't have any characters yet!</p>
+                <p className="text-gray-400 mb-4">You don&apos;t have any characters yet!</p>
                 <Link to="/characters">
                   <Button className="bg-gradient-to-r from-purple-600 to-pink-600">
                     Create Character
@@ -332,6 +380,79 @@ const Marketplace = () => {
                   </button>
                 ))}
               </div>
+            )}
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      {/* Sell-to-Shop Dialog */}
+      <Dialog open={sellDialog.open} onOpenChange={(open) => setSellDialog({ open })}>
+        <DialogContent className="bg-gray-900 border-amber-500/30 text-white">
+          <DialogHeader>
+            <DialogTitle className="text-2xl text-amber-300">Sell to {currentShop?.name}</DialogTitle>
+          </DialogHeader>
+          <div className="space-y-4" data-testid="sell-offer-form">
+            {characters.length === 0 ? (
+              <p className="text-gray-400">You need a character with items to sell.</p>
+            ) : (
+              <>
+                <div>
+                  <Label className="text-gray-400 text-sm mb-1 block">Character</Label>
+                  <Select value={sellCharId} onValueChange={(v) => { setSellCharId(v); setSellInvItemId(''); }}>
+                    <SelectTrigger className="bg-black/20 border-amber-500/30" data-testid="sell-character-select">
+                      <SelectValue placeholder="Choose a character" />
+                    </SelectTrigger>
+                    <SelectContent className="bg-gray-900 border-amber-500/30">
+                      {characters.map((c) => (
+                        <SelectItem key={c.id} value={c.id} data-testid={`sell-char-${c.id}`}>{c.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div>
+                  <Label className="text-gray-400 text-sm mb-1 block">Item to sell</Label>
+                  {sellInventory.length === 0 ? (
+                    <p className="text-sm text-gray-500" data-testid="sell-no-items">This character has nothing to sell.</p>
+                  ) : (
+                    <div className="space-y-2 max-h-[240px] overflow-y-auto" data-testid="sell-inventory-list">
+                      {sellInventory.map((inv) => (
+                        <button
+                          key={inv.id}
+                          onClick={() => setSellInvItemId(inv.id)}
+                          className={`w-full text-left p-3 rounded-lg border transition ${sellInvItemId === inv.id ? 'border-amber-500 bg-amber-600/20' : 'border-white/10 glass hover:bg-white/10'}`}
+                          data-testid={`sell-item-${inv.id}`}
+                        >
+                          <p className="font-bold text-white">{inv.name}</p>
+                          {inv.description && <p className="text-xs text-gray-400">{inv.description}</p>}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <Label className="text-gray-400 text-sm mb-1 block">Your asking price (gold)</Label>
+                  <Input
+                    type="number"
+                    min="1"
+                    value={sellPrice}
+                    onChange={(e) => setSellPrice(e.target.value)}
+                    placeholder="e.g. 150"
+                    className="bg-black/20 border-amber-500/30"
+                    data-testid="sell-price-input"
+                  />
+                </div>
+
+                <Button
+                  onClick={submitSellOffer}
+                  disabled={sellBusy || !sellInvItemId}
+                  className="w-full bg-gradient-to-r from-amber-600 to-yellow-600 text-black"
+                  data-testid="sell-offer-submit"
+                >
+                  {sellBusy ? 'Sending…' : 'Send offer to shopkeeper'}
+                </Button>
+              </>
             )}
           </div>
         </DialogContent>

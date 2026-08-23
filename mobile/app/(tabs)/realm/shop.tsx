@@ -1,10 +1,10 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams } from "expo-router";
 import { useCallback, useEffect, useState } from "react";
-import { FlatList, StyleSheet, Text, View } from "react-native";
+import { FlatList, Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { MARKET } from "@/constants/testIds";
+import { MARKET, SELL } from "@/constants/testIds";
 import { Item, Shop, ShopApi } from "@/src/api";
 import { Button } from "@/src/components/Button";
 import { Header } from "@/src/components/Header";
@@ -24,6 +24,10 @@ export default function ShopScreen() {
   const [items, setItems] = useState<Item[]>([]);
   const [status, setStatus] = useState<"loading" | "error" | "ready">("loading");
   const [buyingId, setBuyingId] = useState<string | null>(null);
+  const [sellOpen, setSellOpen] = useState(false);
+  const [sellItemId, setSellItemId] = useState<string | null>(null);
+  const [sellPrice, setSellPrice] = useState("");
+  const [sellBusy, setSellBusy] = useState(false);
 
   const load = useCallback(async () => {
     if (!shopId) return;
@@ -63,6 +67,40 @@ export default function ShopScreen() {
     }
   };
 
+  const inventory = character?.inventory ?? [];
+
+  const openSell = () => {
+    setSellItemId(null);
+    setSellPrice("");
+    setSellOpen(true);
+  };
+
+  const submitSell = async () => {
+    if (!character || !shopId || !sellItemId) {
+      toast.show("Pick an item to sell.", "error");
+      return;
+    }
+    const price = parseInt(sellPrice, 10);
+    if (!price || price <= 0) {
+      toast.show("Name a positive price.", "error");
+      return;
+    }
+    setSellBusy(true);
+    try {
+      await ShopApi.createBuyOffer(shopId, {
+        character_id: character.id,
+        inventory_item_id: sellItemId,
+        proposed_price: price,
+      });
+      toast.show("Offer sent — the shopkeeper will decide.", "success");
+      setSellOpen(false);
+    } catch (e) {
+      toast.show(e instanceof Error ? e.message : "Could not send offer.", "error");
+    } finally {
+      setSellBusy(false);
+    }
+  };
+
   return (
     <SafeAreaView style={styles.safe} edges={["top"]} testID={MARKET.shopScreen}>
       <Header title={name ?? "Shop"} subtitle={shop?.owner_username ? `by ${shop.owner_username}` : undefined} showBack />
@@ -86,6 +124,16 @@ export default function ShopScreen() {
                 </View>
               ) : noHero ? (
                 <Text style={styles.warn}>Create a hero to purchase items.</Text>
+              ) : null}
+              {character ? (
+                <Button
+                  title="Sell an item"
+                  icon="pricetag-outline"
+                  variant="secondary"
+                  onPress={openSell}
+                  testID={SELL.button}
+                  style={styles.sellBtn}
+                />
               ) : null}
             </View>
           }
@@ -131,6 +179,65 @@ export default function ShopScreen() {
           }}
         />
       )}
+
+      <Modal visible={sellOpen} transparent animationType="fade" onRequestClose={() => setSellOpen(false)}>
+        <Pressable style={styles.backdrop} onPress={() => setSellOpen(false)}>
+          <Pressable style={styles.sheet} onPress={() => {}} testID={SELL.modal}>
+            <Text style={styles.sheetTitle}>Sell to {shop?.name ?? "shop"}</Text>
+            <Text style={styles.sheetSub}>
+              Offer an item from {character?.name}. The owner accepts or declines.
+            </Text>
+            {inventory.length === 0 ? (
+              <Text style={styles.warn} testID={SELL.empty}>
+                {character?.name} has nothing to sell yet.
+              </Text>
+            ) : (
+              <View style={styles.invList}>
+                {inventory.map((inv) => {
+                  const selected = sellItemId === inv.id;
+                  return (
+                    <Pressable
+                      key={inv.id}
+                      onPress={() => setSellItemId(inv.id)}
+                      style={[styles.invRow, selected && styles.invRowActive]}
+                      testID={SELL.itemOption(inv.id)}
+                    >
+                      <Ionicons
+                        name={selected ? "radio-button-on" : "radio-button-off"}
+                        size={18}
+                        color={selected ? colors.gold : colors.textMuted}
+                      />
+                      <Text style={styles.invName} numberOfLines={1}>
+                        {inv.name}
+                      </Text>
+                    </Pressable>
+                  );
+                })}
+              </View>
+            )}
+            <TextInput
+              style={styles.priceInput}
+              value={sellPrice}
+              onChangeText={setSellPrice}
+              placeholder="Asking price (gold)"
+              placeholderTextColor={colors.textMuted}
+              keyboardType="number-pad"
+              testID={SELL.priceInput}
+            />
+            <View style={styles.sheetActions}>
+              <Button title="Cancel" variant="ghost" onPress={() => setSellOpen(false)} testID={SELL.cancel} style={styles.sheetBtn} />
+              <Button
+                title="Send offer"
+                onPress={submitSell}
+                loading={sellBusy}
+                disabled={!sellItemId}
+                testID={SELL.submit}
+                style={styles.sheetBtn}
+              />
+            </View>
+          </Pressable>
+        </Pressable>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -155,6 +262,7 @@ const styles = StyleSheet.create({
   },
   buyingAsText: { ...typography.small, color: colors.goldSoft, fontWeight: "600" },
   warn: { ...typography.small, color: colors.textMuted, marginTop: spacing.md },
+  sellBtn: { alignSelf: "flex-start", marginTop: spacing.md, minHeight: 40 },
   item: {
     backgroundColor: colors.surface,
     borderWidth: 1,
@@ -176,4 +284,39 @@ const styles = StyleSheet.create({
   stock: { ...typography.small, color: colors.textSecondary },
   stockOut: { color: colors.rose },
   buyBtn: { minHeight: 40, paddingHorizontal: spacing.lg },
+  backdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: "center", padding: spacing.lg },
+  sheet: {
+    backgroundColor: colors.bgElevated,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    padding: spacing.lg,
+  },
+  sheetTitle: { ...typography.h2, color: colors.textPrimary },
+  sheetSub: { ...typography.small, color: colors.textSecondary, marginTop: spacing.xs, marginBottom: spacing.md },
+  invList: { gap: spacing.xs, marginBottom: spacing.md },
+  invRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: spacing.sm,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    borderColor: colors.border,
+  },
+  invRowActive: { borderColor: colors.goldBorder, backgroundColor: colors.goldDim },
+  invName: { ...typography.body, color: colors.textPrimary, flex: 1 },
+  priceInput: {
+    backgroundColor: colors.bg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.md,
+    paddingHorizontal: spacing.md,
+    paddingVertical: 10,
+    color: colors.textPrimary,
+    ...typography.body,
+  },
+  sheetActions: { flexDirection: "row", gap: spacing.sm, marginTop: spacing.md },
+  sheetBtn: { flex: 1 },
 });

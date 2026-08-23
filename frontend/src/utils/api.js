@@ -186,6 +186,16 @@ export const getShopEmployees = (shopId) => api.get(`/shops/${shopId}/employees`
 export const hireShopEmployee = (shopId, body) => api.post(`/shops/${shopId}/employees`, body);
 export const fireShopEmployee = (shopId, employeeId) => api.delete(`/shops/${shopId}/employees/${employeeId}`);
 export const getShopLedger = (shopId) => api.get(`/shops/${shopId}/ledger`);
+// Shop treasury (buy-back fund) + buy offers (two-way commerce)
+export const depositShopTreasury = (shopId, amount) => api.post(`/shops/${shopId}/treasury/deposit`, { amount });
+export const withdrawShopTreasury = (shopId, amount) => api.post(`/shops/${shopId}/treasury/withdraw`, { amount });
+export const getShopBuyOffers = (shopId) => api.get(`/shops/${shopId}/buy-offers`);
+export const createShopBuyOffer = (shopId, body) => api.post(`/shops/${shopId}/buy-offers`, body);
+export const acceptShopBuyOffer = (shopId, offerId) => api.post(`/shops/${shopId}/buy-offers/${offerId}/accept`);
+export const declineShopBuyOffer = (shopId, offerId) => api.post(`/shops/${shopId}/buy-offers/${offerId}/decline`);
+export const getMyBuyOffers = () => api.get('/buy-offers/mine');
+// Faction custom offering (coins a new tradeable good)
+export const addFactionCustomOffering = (slug, body) => api.post(`/economy/factions/${slug}/offerings/custom`, body);
 
 // Forums
 export const createForumPost = (data) => api.post('/forums/posts', data);

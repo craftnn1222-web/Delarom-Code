@@ -685,3 +685,80 @@ async def write_shop_ledgers(db, npc_by_shop=None, wages_by_shop=None, restock_b
         })
         written += 1
     return {"ledgers_written": written}
+
+
+
+# ── NPC sellers walking wares into player shops ──────────────────
+# Each cycle a few NPCs bring an item to a player shop and name a price.
+# These land as PENDING buy-offers the owner approves/declines — no auto-buy.
+from datetime import timedelta
+
+NPC_SELL_CHANCE = 0.5            # chance a given shop draws NPC sellers this tick
+NPC_SELLERS_MAX = 2              # up to this many NPC offers per shop per tick
+NPC_OFFER_TTL_HOURS = 18        # stale pending offers expire (~3 cycles)
+
+# (name, description, category, item_type, equipment_slot, stat_bonuses, low, high)
+_NPC_WARES = [
+    ("Chipped Iron Dagger", "A serviceable blade, notched from use.", "weapon", "equipment", "weapon", {"strength": 2}, 20, 60),
+    ("Bundle of Mountain Herbs", "Fresh-cut, still fragrant.", "reagent", "consumable", None, {}, 10, 40),
+    ("Worn Leather Jerkin", "Cracked but honest armour.", "armor", "equipment", "chest", {"endurance": 2}, 25, 70),
+    ("Traveller's Ration Pack", "Hard bread, cured meat, a little salt.", "food", "consumable", None, {}, 8, 25),
+    ("Tarnished Silver Ring", "The engraving has all but worn away.", "luxury", "equipment", "ring", {"luck": 1}, 30, 90),
+    ("Salvaged Steel Scraps", "Good enough for a smith to reforge.", "metal", "consumable", None, {}, 15, 55),
+    ("Faded Spell Scroll", "The ink is dim, the words still hum faintly.", "arcane", "consumable", None, {"magic": 2}, 40, 120),
+    ("Hunter's Short Bow", "Restrung and ready.", "weapon", "equipment", "weapon", {"agility": 2}, 35, 95),
+    ("Wax-Sealed Wine Flask", "Sloshes pleasantly.", "luxury", "consumable", None, {}, 12, 45),
+    ("Cracked Gemstone", "Flawed, but it still catches the light.", "luxury", "consumable", None, {}, 30, 110),
+]
+
+
+async def generate_npc_buy_offers(db) -> Dict:
+    """Create a handful of PENDING NPC buy-offers against player shops."""
+    now = _now_iso()
+    created = 0
+    shops = await db.shops.find({}, {"_id": 0, "id": 1, "owner_id": 1}).to_list(2000)
+    for shop in shops:
+        owner_id = shop.get("owner_id", "")
+        if not owner_id or owner_id.startswith("NPC:"):
+            continue
+        if random.random() > NPC_SELL_CHANCE:
+            continue
+        # Don't let pending offers pile up: cap active NPC offers per shop.
+        pending = await db.shop_buy_offers.count_documents(
+            {"shop_id": shop["id"], "status": "pending", "seller_type": "npc"},
+        )
+        room = max(0, 4 - pending)
+        if room <= 0:
+            continue
+        for _ in range(min(random.randint(1, NPC_SELLERS_MAX), room)):
+            name, desc, cat, itype, slot, bonuses, lo, hi = random.choice(_NPC_WARES)
+            price = random.randint(lo, hi)
+            await db.shop_buy_offers.insert_one({
+                "id": str(uuid.uuid4()),
+                "shop_id": shop["id"],
+                "seller_type": "npc",
+                "seller_user_id": None,
+                "seller_character_id": None,
+                "seller_name": _npc_customer_name(),
+                "inventory_item_id": None,
+                "item": {
+                    "name": name, "description": desc, "category": cat,
+                    "item_type": itype, "equipment_slot": slot, "stat_bonuses": bonuses,
+                },
+                "proposed_price": price,
+                "status": "pending",
+                "created_at": now,
+                "resolved_at": None,
+            })
+            created += 1
+    return {"npc_offers_created": created}
+
+
+async def expire_stale_buy_offers(db) -> Dict:
+    """Age out pending buy-offers older than NPC_OFFER_TTL_HOURS."""
+    cutoff = (datetime.now(timezone.utc) - timedelta(hours=NPC_OFFER_TTL_HOURS)).isoformat()
+    res = await db.shop_buy_offers.update_many(
+        {"status": "pending", "created_at": {"$lt": cutoff}},
+        {"$set": {"status": "expired", "resolved_at": _now_iso()}},
+    )
+    return {"offers_expired": res.modified_count}

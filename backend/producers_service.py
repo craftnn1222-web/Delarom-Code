@@ -462,6 +462,14 @@ class EconomyProducers:
         except Exception as e:  # pragma: no cover — best-effort side-effect
             logger.warning(f"Shop ledger write failed: {e}")
 
+        # 5) NPCs walk wares into player shops (pending buy-offers) + age out stale ones.
+        try:
+            from npc_economy import generate_npc_buy_offers, expire_stale_buy_offers
+            summary["npc_buy_offers"] = await generate_npc_buy_offers(self.db)
+            summary["expired_buy_offers"] = await expire_stale_buy_offers(self.db)
+        except Exception as e:  # pragma: no cover — best-effort side-effect
+            logger.warning(f"NPC buy-offer generation failed: {e}")
+
         return summary
 
     async def recent_tick_log(self, limit: int = 20) -> List[Dict]:

@@ -41,6 +41,18 @@ export interface Character {
   luck: number;
   portrait_url?: string | null;
   created_at: string;
+  inventory?: InventoryItem[];
+}
+
+export interface InventoryItem {
+  id: string;
+  item_id?: string;
+  name: string;
+  description?: string;
+  item_type?: string;
+  equipment_slot?: string | null;
+  stat_bonuses?: Record<string, number>;
+  category?: string;
 }
 
 export interface CharacterCreate {
@@ -368,7 +380,46 @@ export const ShopApi = {
   fireEmployee: (shopId: string, employeeId: string) =>
     api.del<{ fired: string }>(`/shops/${shopId}/employees/${employeeId}`),
   ledger: (shopId: string) => api.get<ShopLedger>(`/shops/${shopId}/ledger`),
+  // ---- Treasury & buy offers (two-way commerce) ----
+  treasuryDeposit: (shopId: string, amount: number) =>
+    api.post<{ treasury: number }>(`/shops/${shopId}/treasury/deposit`, { amount }),
+  treasuryWithdraw: (shopId: string, amount: number) =>
+    api.post<{ treasury: number }>(`/shops/${shopId}/treasury/withdraw`, { amount }),
+  buyOffers: (shopId: string) =>
+    api.get<{ treasury: number; offers: ShopBuyOffer[] }>(`/shops/${shopId}/buy-offers`),
+  createBuyOffer: (
+    shopId: string,
+    body: { character_id: string; inventory_item_id: string; proposed_price: number },
+  ) => api.post<ShopBuyOffer>(`/shops/${shopId}/buy-offers`, body),
+  acceptBuyOffer: (shopId: string, offerId: string) =>
+    api.post<{ ok: boolean; paid_from: string; resale_price: number }>(
+      `/shops/${shopId}/buy-offers/${offerId}/accept`, {},
+    ),
+  declineBuyOffer: (shopId: string, offerId: string) =>
+    api.post<{ ok: boolean }>(`/shops/${shopId}/buy-offers/${offerId}/decline`, {}),
+  myBuyOffers: () => api.get<ShopBuyOffer[]>("/buy-offers/mine"),
 };
+
+export interface ShopBuyOffer {
+  id: string;
+  shop_id: string;
+  seller_type: "player" | "npc";
+  seller_user_id: string | null;
+  seller_character_id: string | null;
+  seller_name: string;
+  inventory_item_id: string | null;
+  item: {
+    name: string;
+    description: string;
+    category: string;
+    item_type: string;
+    equipment_slot: string | null;
+    stat_bonuses: Record<string, number>;
+  };
+  proposed_price: number;
+  status: string;
+  created_at: string;
+}
 
 export interface ShopEmployee {
   id: string;
@@ -423,6 +474,7 @@ export interface Good {
   slug: string;
   name: string;
   category?: string | null;
+  unit?: string | null;
 }
 
 export interface MarketRow {
@@ -456,11 +508,39 @@ export const EconomyApi = {
   ) => api.post<TradeContract>(`/economy/factions/${slug}/contracts`, body),
   breakContract: (slug: string, contractId: string, reason: string) =>
     api.post<TradeContract>(`/economy/factions/${slug}/contracts/${contractId}/break`, { reason }),
+  // ---- Leader-managed offerings ----
+  upsertSpecialty: (
+    slug: string,
+    body: { good_slug: string; base_cost: number; capacity: number; description?: string },
+  ) =>
+    api.post<FactionSpecialty>(`/economy/factions/${slug}/specialties`, {
+      faction_slug: slug,
+      reason: "Leader adjustment",
+      ...body,
+    }),
+  removeSpecialty: (slug: string, goodSlug: string) =>
+    api.del<{ ok: boolean }>(`/economy/factions/${slug}/specialties/${goodSlug}`),
+  addCustomOffering: (
+    slug: string,
+    body: {
+      name: string;
+      category: string;
+      unit: string;
+      base_cost: number;
+      capacity: number;
+      description?: string;
+    },
+  ) => api.post<{ good: Good; specialty: FactionSpecialty }>(
+    `/economy/factions/${slug}/offerings/custom`, body,
+  ),
 };
 
 export interface FactionSpecialty {
   id: string;
   good_slug: string;
+  good_name?: string;
+  good_category?: string;
+  good_unit?: string;
   base_cost: number;
   capacity?: number;
   description?: string;

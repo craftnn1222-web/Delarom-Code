@@ -13,7 +13,7 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
-import { FACTIONS } from "@/constants/testIds";
+import { FACTIONS, OFFERINGS } from "@/constants/testIds";
 import {
   Faction,
   FactionApi,
@@ -235,6 +235,21 @@ export default function FactionDetailScreen() {
               })
             }
             testID={FACTIONS.routesButton}
+            style={styles.routesBtn}
+          />
+
+          {/* Offerings (what the faction produces / sells) */}
+          <Button
+            title="Offerings"
+            icon="pricetags-outline"
+            variant="secondary"
+            onPress={() =>
+              router.push({
+                pathname: "/(tabs)/realm/faction-offerings",
+                params: { slug: String(slug), name: faction.name },
+              })
+            }
+            testID={OFFERINGS.button}
             style={styles.routesBtn}
           />
 

@@ -777,6 +777,7 @@ class Shop(BaseModel):
     name: str
     description: str
     nation: str
+    treasury: int = 0  # shop's own coin purse — funds buy-backs before owner's gold
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class ItemCreate(BaseModel):
