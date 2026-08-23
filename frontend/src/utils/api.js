@@ -182,6 +182,10 @@ export const deleteShopItem = (itemId) => api.delete(`/items/${itemId}`);
 export const updateShopItem = (itemId, data) => api.put(`/items/${itemId}`, data);
 export const getShopAlerts = (shopId) => api.get(`/shops/${shopId}/alerts`);
 export const markShopAlertsSeen = (shopId) => api.post(`/shops/${shopId}/alerts/seen`);
+export const getShopEmployees = (shopId) => api.get(`/shops/${shopId}/employees`);
+export const hireShopEmployee = (shopId, body) => api.post(`/shops/${shopId}/employees`, body);
+export const fireShopEmployee = (shopId, employeeId) => api.delete(`/shops/${shopId}/employees/${employeeId}`);
+export const getShopLedger = (shopId) => api.get(`/shops/${shopId}/ledger`);
 
 // Forums
 export const createForumPost = (data) => api.post('/forums/posts', data);

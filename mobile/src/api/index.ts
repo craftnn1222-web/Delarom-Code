@@ -359,7 +359,54 @@ export const ShopApi = {
   alerts: (shopId: string) => api.get<ShopAlert[]>(`/shops/${shopId}/alerts`),
   markAlertsSeen: (shopId: string) =>
     api.post<{ cleared: number }>(`/shops/${shopId}/alerts/seen`, {}),
+  // ---- Employees & payouts ----
+  employees: (shopId: string) => api.get<ShopEmployee[]>(`/shops/${shopId}/employees`),
+  hireEmployee: (
+    shopId: string,
+    body: { role: string; kind: "npc" | "player"; player_username?: string },
+  ) => api.post<ShopEmployee>(`/shops/${shopId}/employees`, body),
+  fireEmployee: (shopId: string, employeeId: string) =>
+    api.del<{ fired: string }>(`/shops/${shopId}/employees/${employeeId}`),
+  ledger: (shopId: string) => api.get<ShopLedger>(`/shops/${shopId}/ledger`),
 };
+
+export interface ShopEmployee {
+  id: string;
+  shop_id: string;
+  role: "clerk" | "stocker" | "barker";
+  kind: "npc" | "player";
+  name: string;
+  player_user_id: string | null;
+  wage: number;
+  active: boolean;
+  paid_this_cycle: boolean;
+  hired_at: string;
+  last_paid_at: string | null;
+}
+
+export interface ShopLedgerEntry {
+  id: string;
+  shop_id: string;
+  at: string;
+  npc_sales_gold: number;
+  player_sales_gold: number;
+  player_sales_count: number;
+  wages_paid: number;
+  restock_cost: number;
+  gross: number;
+  net: number;
+}
+
+export interface ShopLedger {
+  entries: ShopLedgerEntry[];
+  totals: {
+    npc_sales: number;
+    player_sales: number;
+    wages: number;
+    restock: number;
+    net: number;
+  };
+}
 
 export interface ShopAlert {
   id: string;

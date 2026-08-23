@@ -421,7 +421,20 @@ class EconomyProducers:
         except Exception as e:  # pragma: no cover — trade tick is best-effort
             logger.warning(f"Trade tick failed during production tick: {e}")
 
-        # NPC walk-in customers visit every active player shop on the same tick.
+        # ── Player-shop cycle: payroll → NPC customers → restock → ledger ──
+        payroll_summary = {"by_shop": {}}
+        npc_summary = {"by_shop": {}}
+        restock_summary = {"by_shop": {}}
+
+        # 1) Pay employee wages first so perks only reward paid staff.
+        try:
+            from npc_economy import run_shop_payroll
+            payroll_summary = await run_shop_payroll(self.db)
+            summary["shop_payroll"] = payroll_summary
+        except Exception as e:  # pragma: no cover — best-effort side-effect
+            logger.warning(f"Shop payroll failed: {e}")
+
+        # 2) NPC walk-in customers visit every active player shop.
         try:
             from npc_economy import simulate_npc_customers_for_shops
             npc_summary = await simulate_npc_customers_for_shops(self.db)
@@ -429,13 +442,25 @@ class EconomyProducers:
         except Exception as e:  # pragma: no cover — best-effort side-effect
             logger.warning(f"NPC shop-customer simulation failed: {e}")
 
-        # Auto-restock player shops AFTER customers so shelves end the cycle full.
+        # 3) Auto-restock player shops AFTER customers so shelves end full.
         try:
             from npc_economy import restock_player_shops
             restock_summary = await restock_player_shops(self.db)
             summary["shop_restock"] = restock_summary
         except Exception as e:  # pragma: no cover — best-effort side-effect
             logger.warning(f"Shop auto-restock failed: {e}")
+
+        # 4) Record a per-cycle payout ledger per shop.
+        try:
+            from npc_economy import write_shop_ledgers
+            summary["shop_ledger"] = await write_shop_ledgers(
+                self.db,
+                npc_summary.get("by_shop", {}),
+                payroll_summary.get("by_shop", {}),
+                restock_summary.get("by_shop", {}),
+            )
+        except Exception as e:  # pragma: no cover — best-effort side-effect
+            logger.warning(f"Shop ledger write failed: {e}")
 
         return summary
 

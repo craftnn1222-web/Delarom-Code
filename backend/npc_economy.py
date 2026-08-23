@@ -315,6 +315,32 @@ CUSTOMERS_PER_SHOP_MAX = 4
 MAX_UNITS_PER_PURCHASE = 2
 MAX_ITEM_PRICE_GOLD = 400            # NPCs don't blow the bank on luxury items
 
+# ── Shop employees ───────────────────────────────────────────────
+EMPLOYEE_WAGE = 50            # flat gold per employee, per 6h cycle
+CLERK_BONUS_CUSTOMERS = 2     # extra NPC walk-ins per paid clerk
+BARKER_BONUS_UNITS = 1        # extra max units/purchase per paid barker
+MAX_EMPLOYEES_PER_SHOP = 6
+EMPLOYEE_ROLES = {
+    "clerk": {"label": "Clerk", "perk": "Draws more NPC customers each cycle"},
+    "stocker": {"label": "Stocker", "perk": "Waives the auto-restock wholesale fee"},
+    "barker": {"label": "Barker", "perk": "Customers buy more units per visit"},
+}
+
+
+async def _shop_perks(db, shop_id: str) -> Dict[str, int]:
+    """Counts of active, currently-PAID employees by role for a shop.
+    Unpaid staff (owner couldn't cover wages this cycle) grant no perk."""
+    perks = {"clerk": 0, "stocker": 0, "barker": 0}
+    cur = db.shop_employees.find(
+        {"shop_id": shop_id, "active": True, "paid_this_cycle": True},
+        {"_id": 0, "role": 1},
+    )
+    async for e in cur:
+        r = e.get("role")
+        if r in perks:
+            perks[r] += 1
+    return perks
+
 
 async def simulate_npc_customers_for_shops(db) -> Dict:
     """Simulate NPC walk-in customers visiting every active player shop.
@@ -332,6 +358,7 @@ async def simulate_npc_customers_for_shops(db) -> Dict:
     total_purchases = 0
     total_gold = 0
     shops_visited = 0
+    by_shop: Dict[str, int] = {}
 
     for shop in shops:
         # Skip NPC-owned shops (owner_id starts with NPC:)
@@ -352,7 +379,13 @@ async def simulate_npc_customers_for_shops(db) -> Dict:
         if not items:
             continue
 
-        visitors = random.randint(CUSTOMERS_PER_SHOP_MIN, CUSTOMERS_PER_SHOP_MAX)
+        # Employee perks: Clerk pulls in more walk-ins, Barker sells more units.
+        perks = await _shop_perks(db, shop["id"])
+        visitors = (
+            random.randint(CUSTOMERS_PER_SHOP_MIN, CUSTOMERS_PER_SHOP_MAX)
+            + perks["clerk"] * CLERK_BONUS_CUSTOMERS
+        )
+        max_units = MAX_UNITS_PER_PURCHASE + perks["barker"] * BARKER_BONUS_UNITS
         purchased_this_shop = 0
         gold_this_shop = 0
 
@@ -362,7 +395,7 @@ async def simulate_npc_customers_for_shops(db) -> Dict:
             if not available:
                 break
             item = random.choice(available)
-            units = min(item["stock"], random.randint(1, MAX_UNITS_PER_PURCHASE))
+            units = min(item["stock"], random.randint(1, max_units))
             price_total = int(item["price"]) * units
             customer_name = _npc_customer_name()
 
@@ -413,11 +446,13 @@ async def simulate_npc_customers_for_shops(db) -> Dict:
             shops_visited += 1
             total_purchases += purchased_this_shop
             total_gold += gold_this_shop
+            by_shop[shop["id"]] = gold_this_shop
 
     return {
         "shops_visited": shops_visited,
         "purchases": total_purchases,
         "gold_moved": total_gold,
+        "by_shop": by_shop,
     }
 
 
@@ -466,6 +501,8 @@ async def restock_player_shops(db) -> Dict:
     gold_spent = 0
     skipped_unaffordable = 0
     shop_owner: Dict[str, str] = {}
+    shop_stocker: Dict[str, bool] = {}
+    by_shop: Dict[str, int] = {}
     cur = db.items.find(
         {"auto_restock": True},
         {"_id": 0, "id": 1, "name": 1, "stock": 1, "restock_target": 1, "price": 1, "shop_id": 1},
@@ -492,6 +529,14 @@ async def restock_player_shops(db) -> Dict:
             owner_id = (shop or {}).get("owner_id") or ""
             shop_owner[shop_id] = owner_id
 
+        # A paid Stocker employee waives the wholesale restock fee.
+        has_stocker = shop_stocker.get(shop_id)
+        if has_stocker is None:
+            has_stocker = (await _shop_perks(db, shop_id))["stocker"] > 0
+            shop_stocker[shop_id] = has_stocker
+        if has_stocker:
+            fee = 0
+
         # NPC-owned shops (or ownerless) refill free — nobody to bill.
         if not owner_id or owner_id.startswith("NPC:"):
             await db.items.update_one(
@@ -516,6 +561,7 @@ async def restock_player_shops(db) -> Dict:
                 "created_at": now,
             })
             gold_spent += fee
+            by_shop[shop_id] = by_shop.get(shop_id, 0) + fee
 
         await db.items.update_one(
             {"id": it["id"]}, {"$set": {"stock": target, "last_restocked_at": now}},
@@ -526,4 +572,116 @@ async def restock_player_shops(db) -> Dict:
         "items_restocked": topped,
         "gold_spent": gold_spent,
         "skipped_unaffordable": skipped_unaffordable,
+        "by_shop": by_shop,
     }
+
+
+async def run_shop_payroll(db) -> Dict:
+    """Pay each active employee their flat wage from the shop owner's gold.
+    Runs at the START of the cycle and sets `paid_this_cycle` so the perk
+    functions only reward paid staff. If the owner can't cover a wage the
+    employee goes unpaid (perk inactive) — no debt is accrued."""
+    now = _now_iso()
+    total_wages = 0
+    unpaid = 0
+    by_shop: Dict[str, int] = {}
+    shops = await db.shops.find({}, {"_id": 0, "id": 1, "owner_id": 1}).to_list(2000)
+    for shop in shops:
+        owner_id = shop.get("owner_id", "")
+        if not owner_id or owner_id.startswith("NPC:"):
+            continue
+        employees = await db.shop_employees.find(
+            {"shop_id": shop["id"], "active": True}, {"_id": 0},
+        ).to_list(50)
+        for emp in employees:
+            wage = int(emp.get("wage", EMPLOYEE_WAGE))
+            owner = await db.users.find_one({"id": owner_id}, {"_id": 0, "currency": 1})
+            if owner and int(owner.get("currency", 0)) >= wage:
+                await db.users.update_one({"id": owner_id}, {"$inc": {"currency": -wage}})
+                await db.transactions.insert_one({
+                    "id": str(uuid.uuid4()),
+                    "user_id": owner_id,
+                    "amount": -wage,
+                    "transaction_type": "shop_wage",
+                    "description": f"Paid wages to {emp.get('name', 'an employee')} ({emp.get('role')}).",
+                    "related_id": shop["id"],
+                    "created_at": now,
+                })
+                # Player employees actually receive the wage; NPC wages are a gold sink.
+                player_uid = emp.get("player_user_id")
+                if player_uid:
+                    await db.users.update_one({"id": player_uid}, {"$inc": {"currency": wage}})
+                    await db.transactions.insert_one({
+                        "id": str(uuid.uuid4()),
+                        "user_id": player_uid,
+                        "amount": wage,
+                        "transaction_type": "shop_wage_received",
+                        "description": f"Wages earned as {emp.get('role')} at a shop.",
+                        "related_id": shop["id"],
+                        "created_at": now,
+                    })
+                await db.shop_employees.update_one(
+                    {"id": emp["id"]}, {"$set": {"paid_this_cycle": True, "last_paid_at": now}},
+                )
+                total_wages += wage
+                by_shop[shop["id"]] = by_shop.get(shop["id"], 0) + wage
+            else:
+                await db.shop_employees.update_one(
+                    {"id": emp["id"]}, {"$set": {"paid_this_cycle": False}},
+                )
+                unpaid += 1
+    return {"wages_paid": total_wages, "unpaid_employees": unpaid, "by_shop": by_shop}
+
+
+async def write_shop_ledgers(db, npc_by_shop=None, wages_by_shop=None, restock_by_shop=None) -> Dict:
+    """Write a per-cycle payout ledger entry for each player shop, combining
+    NPC sales (this tick) + player sales (real-time since last cycle) minus
+    wages and restock costs."""
+    npc_by_shop = npc_by_shop or {}
+    wages_by_shop = wages_by_shop or {}
+    restock_by_shop = restock_by_shop or {}
+    now = _now_iso()
+    written = 0
+    shops = await db.shops.find(
+        {}, {"_id": 0, "id": 1, "owner_id": 1, "last_cycle_at": 1},
+    ).to_list(2000)
+    for shop in shops:
+        owner_id = shop.get("owner_id", "")
+        if not owner_id or owner_id.startswith("NPC:"):
+            continue
+        sid = shop["id"]
+        last = shop.get("last_cycle_at")
+        player_gold = 0
+        player_count = 0
+        if last:
+            q = {
+                "user_id": owner_id,
+                "transaction_type": "shop_sale",
+                "buyer_type": {"$ne": "npc"},
+                "created_at": {"$gt": last, "$lte": now},
+            }
+            async for t in db.transactions.find(q, {"_id": 0, "amount": 1}):
+                player_gold += int(t.get("amount", 0))
+                player_count += 1
+        await db.shops.update_one({"id": sid}, {"$set": {"last_cycle_at": now}})
+
+        npc_gold = int(npc_by_shop.get(sid, 0))
+        wages = int(wages_by_shop.get(sid, 0))
+        restock = int(restock_by_shop.get(sid, 0))
+        gross = npc_gold + player_gold
+        if gross == 0 and wages == 0 and restock == 0:
+            continue
+        await db.shop_ledger.insert_one({
+            "id": str(uuid.uuid4()),
+            "shop_id": sid,
+            "at": now,
+            "npc_sales_gold": npc_gold,
+            "player_sales_gold": player_gold,
+            "player_sales_count": player_count,
+            "wages_paid": wages,
+            "restock_cost": restock,
+            "gross": gross,
+            "net": gross - wages - restock,
+        })
+        written += 1
+    return {"ledgers_written": written}

@@ -22,6 +22,8 @@ import { Header } from "@/src/components/Header";
 import { PickerField } from "@/src/components/PickerField";
 import { Pill } from "@/src/components/Pill";
 import { ErrorView, Loading } from "@/src/components/StateViews";
+import { ShopPayoutsSection } from "@/src/components/ShopPayoutsSection";
+import { ShopStaffSection } from "@/src/components/ShopStaffSection";
 import { TextField } from "@/src/components/TextField";
 import { useToast } from "@/src/components/Toast";
 import { colors, radius, spacing, typography } from "@/src/theme/theme";
@@ -285,6 +287,9 @@ export default function MyShopScreen() {
               </View>
             </>
           ) : null}
+
+          {shop ? <ShopStaffSection shopId={shop.id} /> : null}
+          {shop ? <ShopPayoutsSection shopId={shop.id} /> : null}
         </ScrollView>
       )}
 

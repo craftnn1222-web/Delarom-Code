@@ -7,7 +7,9 @@ keyword args; route bodies close over them.
 from typing import List, Optional, Dict
 from datetime import datetime, timezone
 import logging
+import re
 import uuid
+from pydantic import BaseModel
 from fastapi import APIRouter, Depends, HTTPException
 
 logger = logging.getLogger(__name__)
@@ -187,6 +189,144 @@ def attach_shop_routes(
             {"shop_id": shop_id, "seen": False}, {"$set": {"seen": True}},
         )
         return {"cleared": res.modified_count}
+
+    # ── Employees (hire & pay NPC or player staff) ────────────────
+    class HireEmployeeBody(BaseModel):
+        role: str
+        kind: str = "npc"                      # "npc" | "player"
+        player_username: Optional[str] = None  # required when kind == "player"
+
+    async def _owned_shop_or_error(shop_id: str, user):
+        shop_doc = await db.shops.find_one({"id": shop_id}, {"_id": 0})
+        if not shop_doc:
+            raise HTTPException(status_code=404, detail="Shop not found")
+        if shop_doc.get("owner_id") != user.id:
+            raise HTTPException(status_code=403, detail="Not your shop")
+        return shop_doc
+
+    @api_router.get("/shops/{shop_id}/employees")
+    async def list_employees(shop_id: str, current_user: User = Depends(get_current_user)):
+        await _owned_shop_or_error(shop_id, current_user)
+        return await db.shop_employees.find(
+            {"shop_id": shop_id, "active": True}, {"_id": 0},
+        ).sort("hired_at", 1).to_list(50)
+
+    @api_router.post("/shops/{shop_id}/employees")
+    async def hire_employee(
+        shop_id: str,
+        body: HireEmployeeBody,
+        current_user: User = Depends(get_current_user),
+    ):
+        from npc_economy import (
+            EMPLOYEE_ROLES, EMPLOYEE_WAGE, MAX_EMPLOYEES_PER_SHOP, _npc_customer_name,
+        )
+        await _owned_shop_or_error(shop_id, current_user)
+        role = (body.role or "").lower()
+        if role not in EMPLOYEE_ROLES:
+            raise HTTPException(status_code=400, detail="Unknown employee role")
+        count = await db.shop_employees.count_documents({"shop_id": shop_id, "active": True})
+        if count >= MAX_EMPLOYEES_PER_SHOP:
+            raise HTTPException(
+                status_code=400,
+                detail=f"You can employ at most {MAX_EMPLOYEES_PER_SHOP} staff.",
+            )
+
+        kind = (body.kind or "npc").lower()
+        emp_name = _npc_customer_name()
+        player_user_id = None
+        if kind == "player":
+            uname = (body.player_username or "").strip()
+            if not uname:
+                raise HTTPException(status_code=400, detail="Enter the player's username.")
+            player = await db.users.find_one(
+                {"username": {"$regex": f"^{re.escape(uname)}$", "$options": "i"}},
+                {"_id": 0, "id": 1, "username": 1, "status": 1},
+            )
+            if not player:
+                raise HTTPException(status_code=404, detail=f"No player named '{uname}'.")
+            if player.get("status") != "active":
+                raise HTTPException(status_code=400, detail="That player isn't an active member.")
+            if player["id"] == current_user.id:
+                raise HTTPException(status_code=400, detail="You can't put yourself on payroll.")
+            existing = await db.shop_employees.find_one(
+                {"shop_id": shop_id, "player_user_id": player["id"], "active": True},
+                {"_id": 0, "id": 1},
+            )
+            if existing:
+                raise HTTPException(status_code=400, detail="That player already works here.")
+            player_user_id = player["id"]
+            emp_name = player["username"]
+        else:
+            kind = "npc"
+
+        emp = {
+            "id": str(uuid.uuid4()),
+            "shop_id": shop_id,
+            "role": role,
+            "kind": kind,
+            "name": emp_name,
+            "player_user_id": player_user_id,
+            "wage": EMPLOYEE_WAGE,
+            "active": True,
+            "paid_this_cycle": False,
+            "hired_at": datetime.now(timezone.utc).isoformat(),
+            "last_paid_at": None,
+        }
+        await db.shop_employees.insert_one(emp)
+        emp.pop("_id", None)
+        return emp
+
+    @api_router.delete("/shops/{shop_id}/employees/{employee_id}")
+    async def fire_employee(
+        shop_id: str,
+        employee_id: str,
+        current_user: User = Depends(get_current_user),
+    ):
+        await _owned_shop_or_error(shop_id, current_user)
+        res = await db.shop_employees.delete_one({"id": employee_id, "shop_id": shop_id})
+        if res.deleted_count == 0:
+            raise HTTPException(status_code=404, detail="Employee not found")
+        return {"fired": employee_id}
+
+    # ── Owner payouts (per-cycle ledger + all-time totals) ─────────
+    @api_router.get("/shops/{shop_id}/ledger")
+    async def get_shop_ledger(shop_id: str, current_user: User = Depends(get_current_user)):
+        shop_doc = await _owned_shop_or_error(shop_id, current_user)
+        owner_id = shop_doc.get("owner_id")
+        entries = await db.shop_ledger.find(
+            {"shop_id": shop_id}, {"_id": 0},
+        ).sort("at", -1).to_list(30)
+
+        sales = await db.transactions.aggregate([
+            {"$match": {"user_id": owner_id, "transaction_type": "shop_sale"}},
+            {"$group": {
+                "_id": {"$cond": [{"$eq": ["$buyer_type", "npc"]}, "npc", "player"]},
+                "gold": {"$sum": "$amount"},
+                "n": {"$sum": 1},
+            }},
+        ]).to_list(10)
+        costs = await db.transactions.aggregate([
+            {"$match": {"user_id": owner_id,
+                        "transaction_type": {"$in": ["shop_wage", "shop_restock"]}}},
+            {"$group": {"_id": "$transaction_type", "gold": {"$sum": "$amount"}}},
+        ]).to_list(10)
+
+        totals = {"npc_sales": 0, "player_sales": 0, "wages": 0, "restock": 0}
+        for row in sales:
+            if row["_id"] == "npc":
+                totals["npc_sales"] = int(row.get("gold", 0))
+            else:
+                totals["player_sales"] = int(row.get("gold", 0))
+        for row in costs:
+            if row["_id"] == "shop_wage":
+                totals["wages"] = -int(row.get("gold", 0))
+            elif row["_id"] == "shop_restock":
+                totals["restock"] = -int(row.get("gold", 0))
+        totals["net"] = (
+            totals["npc_sales"] + totals["player_sales"] - totals["wages"] - totals["restock"]
+        )
+        return {"entries": entries, "totals": totals}
+
 
 
 

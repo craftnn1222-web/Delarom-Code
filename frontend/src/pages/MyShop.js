@@ -13,6 +13,8 @@ import { Store, Plus, Package, Coins, Trash2, Edit2, AlertTriangle } from 'lucid
 import AutoPricingSection from '../components/AutoPricingSection';
 import RestockSection from '../components/RestockSection';
 import ShopCustomerFeed from '../components/ShopCustomerFeed';
+import ShopStaffPanel from '../components/ShopStaffPanel';
+import ShopPayoutsPanel from '../components/ShopPayoutsPanel';
 
 const MyShop = () => {
   const [shop, setShop] = useState(null);
@@ -571,6 +573,14 @@ const MyShop = () => {
 
         {/* NPC walk-in customer feed — populated on every 6h economy tick */}
         {shop && <ShopCustomerFeed shopId={shop.id} className="mt-8" />}
+
+        {/* Employees & owner payouts */}
+        {shop && (
+          <div className="mt-8 grid gap-6 lg:grid-cols-2">
+            <ShopStaffPanel shopId={shop.id} />
+            <ShopPayoutsPanel shopId={shop.id} />
+          </div>
+        )}
 
         {/* Delete Confirmation Dialog */}
         <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>

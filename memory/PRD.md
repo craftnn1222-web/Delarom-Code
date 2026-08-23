@@ -458,6 +458,15 @@ Three shop/faction-economy features. Tested by testing_agent iteration_37 (backe
 - **Low-Stock Alerts** (in-app, not push): `_emit_out_of_stock_alert` fires a de-duplicated alert when an item hits 0 stock via NPC customers (`npc_economy`) or player purchase (`shops.py`). New owner-only routes `GET /shops/{id}/alerts` + `POST /shops/{id}/alerts/seen`. "Sold out" banner + dismiss on web MyShop (`low-stock-alerts`) and mobile my-shop (`shop-low-stock-alerts`).
 - **Cosmetic (resolved 2026-08-23)**: replaced the deprecated RN `shadow*` style props in `src/components/Toast.tsx` with a single `boxShadow` string (RN 0.81 supports it natively + on web), silencing the Expo deprecation warning. (An unrelated `props.pointerEvents` deprecation still logs from expo-router's own bundle — not our code.)
 
+## Owner Payouts + Employees (shipped 2026-08-23, iteration_38 — web + mobile)
+Shop owners can hire employees and see a per-cycle payout summary.
+- **Roles & perks** (flat **50g/employee/~6h cycle**): Clerk → more NPC walk-ins; Stocker → waives the auto-restock wholesale fee; Barker → customers buy more units/visit. Perks apply only to employees actually **paid** that cycle (owner short on gold ⇒ staff idle, no debt). Max 6 staff/shop.
+- **NPC vs Player employees** (user choice): NPC staff get an auto-generated lore name and their wage is a gold sink; **Player** staff are looked up by username (case-insensitive, must be an active member) and actually **receive** the 50g each cycle (`shop_wage_received` txn). Guards: unknown username 404; self-hire, inactive, duplicate-active, blank username, unknown role, >6 cap all 400.
+- **Owner Payouts ledger**: per-cycle entries (NPC sales / player sales+count / wages / restock / gross / net) + all-time totals. Written on the economy tick after payroll → NPC customers → restock.
+- **Backend**: `npc_economy.run_shop_payroll` / `write_shop_ledgers` / `_shop_perks`; routes in `routes/shops.py` (`GET/POST/DELETE /shops/{id}/employees`, `GET /shops/{id}/ledger`, owner-only); tick wiring in `producers_service.py`.
+- **Web**: `components/ShopStaffPanel.js` + `ShopPayoutsPanel.js`, wired into `pages/MyShop.js`. **Mobile**: `src/components/ShopStaffSection.tsx` + `ShopPayoutsSection.tsx` in `app/(tabs)/realm/my-shop.tsx`; testIds `STAFF`/`PAYOUTS`.
+- **Verified** iteration_38: backend **23/23 pytest**, web + mobile parity confirmed, no bugs. (Non-blocking notes: ledger wages-total relies on `shop_wage` being stored negative — currently correct; `EMPLOYEE_WAGE=50` duplicated across web/mobile/backend.)
+
 ## Backlog (P1 → P3)
 - **P1**: Refactor `server.py` (3900+ lines) into route modules.
 - **P1 (security)**: Migrate auth token from `localStorage` to httpOnly cookies (23 instances across `api.js`, `Login.js`, `AdminDashboard.js`, `AuthContext.js`, `ProtectedRoute.js`).

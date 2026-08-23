@@ -168,3 +168,24 @@ export const SHOP = {
   alertsBanner: "shop-low-stock-alerts",
   alertDismiss: "shop-alerts-dismiss",
 };
+
+export const STAFF = {
+  section: "shop-staff-section",
+  hireNpc: (role) => `hire-npc-${role}`,
+  playerRole: "staff-player-role",
+  playerRoleOption: (role) => `staff-player-role-${role}`,
+  playerName: "staff-player-name",
+  hirePlayer: "staff-hire-player",
+  employeeRow: (id) => `staff-employee-${id}`,
+  employeeKind: (id) => `staff-employee-kind-${id}`,
+  fire: (id) => `staff-fire-${id}`,
+  empty: "shop-staff-empty",
+};
+
+export const PAYOUTS = {
+  section: "shop-payouts-section",
+  totals: "shop-payouts-totals",
+  entry: (id) => `payouts-entry-${id}`,
+  empty: "shop-payouts-empty",
+  loading: "shop-payouts-loading",
+};
