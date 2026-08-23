@@ -137,8 +137,8 @@ const FactionTradeRoutesTab = ({ factionSlug, canEdit }) => {
             Standing Trade Routes ({active.length} active · {broken.length} broken)
           </h2>
           <p className="text-xs text-gray-500 mt-1 italic">
-            Standing contracts shipping this faction's offerings to cities or other factions.
-            Each pays the source's base cost plus a tariff agreed at signing.
+            Standing contracts shipping this faction&apos;s offerings to cities or other factions.
+            Each pays the source&apos;s base cost plus a tariff agreed at signing.
           </p>
         </div>
         {canEdit && (
@@ -176,6 +176,9 @@ const FactionTradeRoutesTab = ({ factionSlug, canEdit }) => {
                 <span>Tariff {c.tariff_pct}% · Qty/tick {c.quantity_per_tick}</span>
                 <span className="text-amber-200/50">{c.base_cost_snapshot}g base</span>
               </div>
+              <p className="text-xs text-emerald-300 mt-1 font-semibold" data-testid={`route-delivered-${c.id}`}>
+                Delivers at {Math.round((c.base_cost_snapshot || 0) * (1 + (c.tariff_pct || 0) / 100))}g
+              </p>
               {canEdit && breakingId !== c.id && (
                 <Button
                   type="button"

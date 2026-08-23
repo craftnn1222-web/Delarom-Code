@@ -103,6 +103,15 @@ export const FACTIONS = {
   threadTitleInput: "faction-thread-title-input",
   threadContentInput: "faction-thread-content-input",
   threadCreateSubmit: "faction-thread-create-submit",
+  routesButton: "faction-routes-button",
+  routesScreen: "faction-routes-screen",
+  routeCard: "faction-route-card",
+  newRouteButton: "faction-new-route-button",
+  routeGood: "faction-route-good",
+  routeCity: "faction-route-city",
+  routeTariff: "faction-route-tariff",
+  routeCreateSubmit: "faction-route-create-submit",
+  routeBreakButton: "faction-route-break",
 };
 
 export const PARTIES = {
@@ -154,4 +163,8 @@ export const SHOP = {
   itemCity: "shop-item-city",
   itemMarkup: "shop-item-markup",
   itemSubmit: "shop-item-submit",
+  restockToggle: "shop-item-restock-toggle",
+  restockTarget: "shop-item-restock-target",
+  alertsBanner: "shop-low-stock-alerts",
+  alertDismiss: "shop-alerts-dismiss",
 };

@@ -223,6 +223,21 @@ export default function FactionDetailScreen() {
             )}
           </View>
 
+          {/* Trade Routes (Contract Manager) */}
+          <Button
+            title="Trade Routes"
+            icon="git-network-outline"
+            variant="secondary"
+            onPress={() =>
+              router.push({
+                pathname: "/(tabs)/realm/faction-routes",
+                params: { slug: String(slug), name: faction.name },
+              })
+            }
+            testID={FACTIONS.routesButton}
+            style={styles.routesBtn}
+          />
+
           {/* Discussion */}
           <View style={styles.discussionHead}>
             <Text style={[styles.sectionLabel, styles.sectionLabelInline]}>Discussion</Text>
@@ -389,6 +404,7 @@ const styles = StyleSheet.create({
   treasurySub: { ...typography.small, color: colors.textSecondary, marginTop: 2 },
   treasuryHint: { ...typography.small, color: colors.textMuted, marginTop: spacing.md },
   donateBtn: { marginTop: spacing.md },
+  routesBtn: { alignSelf: "stretch", marginTop: spacing.md },
   discussionHead: {
     alignSelf: "stretch",
     flexDirection: "row",

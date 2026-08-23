@@ -1,0 +1,43 @@
+{
+  "summary": "Iteration 36 — Validated (1) Trade Contracts seed endpoint idempotency + admin-only gating, (2) auto-pricing 'lights up' end-to-end via /api/economy/markets/{nation}/{city} for all 4 canonical combos, and (3) auto_restock + restock_target persistence through item CREATE + UPDATE + GET on the shared backend. Web admin 'Seed Trade Contracts' panel + button + result render correctly and returned 'created:0 · skipped:12 · 13 live market prices'. Web MyShop Add Item modal shows Auto-restock section with data-testid restock-section/toggle/target-input (toggle reveals target). Web AutoPricingSection lights up: Iron Ingots + Ironhold @ 30% markup shows 'Live retail price 65g' (was 'no active contract'). Mobile Expo web preview MyShop → shop-item form renders shop-item-restock-toggle + shop-item-restock-target correctly (default 10, revealed when toggled). Backend suite 7/7 passing. No functional bugs. One pre-existing data-quality note carried from iter35 (city list has near-duplicate entries) still present.",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iter36_shop_features.py",
+    "/app/test_reports/pytest/iter36_shop.xml"
+  ],
+  "action_items": [
+    "(Optional data cleanup, carried over from iter35) City dropdown in the shop-item Auto-pricing picker still has near-duplicate entries e.g. \"Astra'Lun (aigraels)\" twice and \"Ancestor Hall\" vs \"Ancestorhall\" (dhor-kuldor). Not a code bug — seeded data noise.",
+    "(Code-quality, low priority) PUT /api/items/{item_id} still requires the full ItemCreate body — same partial-update anti-pattern flagged in iter35."
+  ],
+  "critical_code_review_comments": [
+    "seed_starter_contracts() is correctly idempotent (POST twice returns created:0 skipped:12) and returns the required shape {created, skipped, contracts[], available_market_rows}.",
+    "Route /api/economy/admin/seed-contracts is correctly admin-gated (401 without auth).",
+    "auto_restock + restock_target round-trip cleanly through POST /api/shops/{shop_id}/items and PUT /api/items/{item_id}; both fields visible on the item objects returned by GET /api/shops/{shop_id}/items.",
+    "Web RestockSection component uses the exact data-testids requested (restock-section, restock-toggle, restock-target-input); Mobile uses SHOP.restockToggle=shop-item-restock-toggle and SHOP.restockTarget=shop-item-restock-target as spec'd."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter36_shop_features.py"
+  ],
+  "success_rate": {"backend": "100% (7/7)", "frontend": "100% (web admin seed + web MyShop restock + web auto-pricing live price + mobile MyShop restock all verified)"},
+  "test_credentials": "Admin craftnn1222@gmail.com / admin123 — has admin role + owns 'Astral Antiquities' shop (id 41fc2225-2fbc-4be9-abce-8ae1e166a37c).",
+  "seed_data_creation": "Test created + deleted one item (TEST_iter36_restock_item) via backend during persistence test. Did NOT submit any items via the UI to avoid data churn.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend regression file: /app/backend/tests/test_iter36_shop_features.py (7 tests). Endpoints hit: POST /api/economy/admin/seed-contracts, GET /api/economy/markets/{nation}/{city_slug}, GET /api/shops/my-shop, POST /api/shops/{id}/items, PUT /api/items/{id}, GET /api/shops/{id}/items. Mobile Expo preview: https://npc-economy-preview.expo.preview.emergentagent.com — login = 2 text inputs + Enter button, then /realm/my-shop → shop-add-item-button opens /realm/shop-item?shopId=... Note: the ~6h in-world restock_player_shops tick was NOT observed live per the main agent's guidance (only opportunistic on RP action) — persistence-only verification is the right coverage.",
+  "rca of the issue": ""
+}

@@ -372,6 +372,9 @@ async def simulate_npc_customers_for_shops(db) -> Dict:
                 {"id": item["id"]}, {"$set": {"stock": new_stock}},
             )
             item["stock"] = new_stock
+            # Low-stock alert for the owner when a walk-in clears the shelf.
+            if new_stock <= 0:
+                await _emit_out_of_stock_alert(db, shop["id"], item["id"], item["name"])
 
             # Credit shop owner
             await db.users.update_one(
@@ -423,3 +426,104 @@ async def recent_shop_customers(db, shop_id: str, limit: int = 30) -> List[Dict]
     return await db.shop_customers.find(
         {"shop_id": shop_id}, {"_id": 0},
     ).sort("at", -1).limit(max(1, min(200, limit))).to_list(limit)
+
+
+
+# ── Auto-restock player shops ────────────────────────────────────
+
+RESTOCK_COST_PCT = 20  # owners pay 20% of item price per unit refilled
+
+
+async def _emit_out_of_stock_alert(db, shop_id: str, item_id: str, item_name: str) -> None:
+    """Record an in-app 'sold out' alert for the shop owner. De-duplicated:
+    won't stack another unseen alert for the same item."""
+    existing = await db.shop_alerts.find_one(
+        {"item_id": item_id, "type": "out_of_stock", "seen": False}, {"_id": 0, "id": 1},
+    )
+    if existing:
+        return
+    await db.shop_alerts.insert_one({
+        "id": str(uuid.uuid4()),
+        "shop_id": shop_id,
+        "item_id": item_id,
+        "item_name": item_name,
+        "type": "out_of_stock",
+        "seen": False,
+        "created_at": _now_iso(),
+    })
+
+
+async def restock_player_shops(db) -> Dict:
+    """Auto-restock: top every opted-in item back up to its `restock_target`,
+    charging the owner a wholesale fee (20% of price per unit). If the owner
+    can't afford the full refill this cycle, the item is left as-is (no debt).
+
+    Called from the same 6h economy tick as NPC walk-in customers, AFTER them,
+    so an owner always finds their shelves refilled between cycles.
+    """
+    now = _now_iso()
+    topped = 0
+    gold_spent = 0
+    skipped_unaffordable = 0
+    shop_owner: Dict[str, str] = {}
+    cur = db.items.find(
+        {"auto_restock": True},
+        {"_id": 0, "id": 1, "name": 1, "stock": 1, "restock_target": 1, "price": 1, "shop_id": 1},
+    )
+    async for it in cur:
+        try:
+            target = int(it.get("restock_target"))
+        except (TypeError, ValueError):
+            continue
+        if target <= 0:
+            continue
+        stock = int(it.get("stock", 0))
+        if stock >= target:
+            continue
+        units = target - stock
+        price = int(it.get("price", 0) or 0)
+        # ceil(price * 20%) per unit, without float rounding surprises.
+        fee = ((price * RESTOCK_COST_PCT + 99) // 100) * units
+        shop_id = it.get("shop_id")
+
+        owner_id = shop_owner.get(shop_id)
+        if owner_id is None:
+            shop = await db.shops.find_one({"id": shop_id}, {"_id": 0, "owner_id": 1})
+            owner_id = (shop or {}).get("owner_id") or ""
+            shop_owner[shop_id] = owner_id
+
+        # NPC-owned shops (or ownerless) refill free — nobody to bill.
+        if not owner_id or owner_id.startswith("NPC:"):
+            await db.items.update_one(
+                {"id": it["id"]}, {"$set": {"stock": target, "last_restocked_at": now}},
+            )
+            topped += 1
+            continue
+
+        if fee > 0:
+            owner = await db.users.find_one({"id": owner_id}, {"_id": 0, "currency": 1})
+            if not owner or int(owner.get("currency", 0)) < fee:
+                skipped_unaffordable += 1
+                continue
+            await db.users.update_one({"id": owner_id}, {"$inc": {"currency": -fee}})
+            await db.transactions.insert_one({
+                "id": str(uuid.uuid4()),
+                "user_id": owner_id,
+                "amount": -fee,
+                "transaction_type": "shop_restock",
+                "description": f"Auto-restocked {units}× {it.get('name', 'item')} (wholesale).",
+                "related_id": it["id"],
+                "created_at": now,
+            })
+            gold_spent += fee
+
+        await db.items.update_one(
+            {"id": it["id"]}, {"$set": {"stock": target, "last_restocked_at": now}},
+        )
+        topped += 1
+
+    return {
+        "items_restocked": topped,
+        "gold_spent": gold_spent,
+        "skipped_unaffordable": skipped_unaffordable,
+    }

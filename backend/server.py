@@ -795,6 +795,10 @@ class ItemCreate(BaseModel):
     source_nation: Optional[str] = None
     markup_pct: Optional[int] = None
     is_auto_priced: bool = False
+    # Auto-restock (2026-08-23): top stock back up to `restock_target` on each
+    # ~6h economy cycle so player shelves never stay empty.
+    auto_restock: bool = False
+    restock_target: Optional[int] = None
 
 class Item(BaseModel):
     model_config = ConfigDict(extra="ignore")
@@ -818,6 +822,11 @@ class Item(BaseModel):
     markup_pct: Optional[int] = None
     is_auto_priced: bool = False
     last_repriced_at: Optional[str] = None
+    # Auto-restock — see ItemCreate. `last_restocked_at` records the last cycle
+    # that topped this item up.
+    auto_restock: bool = False
+    restock_target: Optional[int] = None
+    last_restocked_at: Optional[str] = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 # Transaction Model

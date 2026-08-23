@@ -268,6 +268,86 @@ class EconomyService:
             await self._recompute_city_good_price(to_nation, to_city_slug, good_slug)
         return doc
 
+    async def seed_starter_contracts(
+        self,
+        *,
+        cities_per_nation: int = 3,
+        tariff_pct: int = 25,
+    ) -> Dict:
+        """Seed a spread of ACTIVE standing contracts so shop auto-pricing has
+        live prices in every shop-picker nation. Idempotent — skips a
+        (faction, good, city) combo that already has an active contract."""
+        PICKER_NATIONS = ["aigraels", "dhor-kuldor", "selindori", "ammeonon"]
+        specs = await self.specialties.find({}, {"_id": 0}).to_list(500)
+        if not specs:
+            return {"created": 0, "skipped": 0, "reason": "no faction specialties seeded"}
+
+        fac_ids: Dict[str, str] = {}
+        async for f in self.db.factions.find({}, {"_id": 0, "slug": 1, "id": 1}):
+            fac_ids[f["slug"]] = f["id"]
+
+        # De-duplicate near-identical city slugs (e.g. astra-lun / astralun).
+        city_targets: List = []
+        for n in PICKER_NATIONS:
+            cs = await self.db.cities.find(
+                {"nation": n}, {"_id": 0, "slug": 1, "name": 1},
+            ).sort("name", 1).to_list(500)
+            seen: set = set()
+            chosen: List[str] = []
+            for c in cs:
+                key = (c.get("slug") or "").replace("-", "").lower()
+                if not key or key in seen:
+                    continue
+                seen.add(key)
+                chosen.append(c["slug"])
+                if len(chosen) >= cities_per_nation:
+                    break
+            for slug in chosen:
+                city_targets.append((n, slug))
+
+        created: List[Dict] = []
+        skipped = 0
+        for i, (nation, city) in enumerate(city_targets):
+            spec = specs[i % len(specs)]
+            fslug = spec.get("faction_slug")
+            good = spec.get("good_slug")
+            fid = spec.get("faction_id") or fac_ids.get(fslug)
+            if not (fslug and good and fid):
+                skipped += 1
+                continue
+            existing = await self.contracts.find_one({
+                "from_faction_slug": fslug,
+                "good_slug": good,
+                "to_city_slug": city,
+                "status": "active",
+            })
+            if existing:
+                skipped += 1
+                continue
+            try:
+                await self.create_standing_contract(
+                    from_faction_id=fid,
+                    from_faction_slug=fslug,
+                    to_type="city",
+                    good_slug=good,
+                    to_city_slug=city,
+                    to_nation=nation,
+                    tariff_pct=tariff_pct,
+                    quantity_per_tick=50,
+                )
+                created.append({"faction": fslug, "good": good, "nation": nation, "city": city})
+            except ValueError:
+                skipped += 1
+
+        available = await self.market_prices.count_documents({"is_available": True})
+        return {
+            "created": len(created),
+            "skipped": skipped,
+            "contracts": created,
+            "available_market_rows": available,
+        }
+
+
     async def list_contracts(
         self,
         *,

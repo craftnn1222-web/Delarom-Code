@@ -163,6 +163,32 @@ def attach_shop_routes(
             raise HTTPException(status_code=404, detail="Shop not found")
         return await recent_shop_customers(db, shop_id, limit=limit)
 
+    @api_router.get("/shops/{shop_id}/alerts")
+    async def get_shop_alerts(shop_id: str, current_user: User = Depends(get_current_user)):
+        """Unseen low-stock (sold-out) alerts for the owner's shop."""
+        shop_doc = await db.shops.find_one({"id": shop_id}, {"_id": 0})
+        if not shop_doc:
+            raise HTTPException(status_code=404, detail="Shop not found")
+        if shop_doc.get("owner_id") != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only view your own shop's alerts")
+        return await db.shop_alerts.find(
+            {"shop_id": shop_id, "seen": False}, {"_id": 0},
+        ).sort("created_at", -1).to_list(50)
+
+    @api_router.post("/shops/{shop_id}/alerts/seen")
+    async def mark_shop_alerts_seen(shop_id: str, current_user: User = Depends(get_current_user)):
+        """Dismiss all unseen alerts for this shop."""
+        shop_doc = await db.shops.find_one({"id": shop_id}, {"_id": 0})
+        if not shop_doc:
+            raise HTTPException(status_code=404, detail="Shop not found")
+        if shop_doc.get("owner_id") != current_user.id:
+            raise HTTPException(status_code=403, detail="You can only manage your own shop's alerts")
+        res = await db.shop_alerts.update_many(
+            {"shop_id": shop_id, "seen": False}, {"$set": {"seen": True}},
+        )
+        return {"cleared": res.modified_count}
+
+
 
     @api_router.delete("/items/{item_id}")
     async def delete_shop_item(item_id: str, current_user: User = Depends(get_current_user)):
@@ -218,6 +244,8 @@ def attach_shop_routes(
             "source_nation": item_data.source_nation,
             "markup_pct": item_data.markup_pct,
             "is_auto_priced": item_data.is_auto_priced,
+            "auto_restock": item_data.auto_restock,
+            "restock_target": item_data.restock_target,
         }
         # Economy auto-pricing — recompute if the owner opted in.
         if item_data.is_auto_priced:
@@ -341,6 +369,16 @@ def attach_shop_routes(
 
         # Decrease stock
         await db.items.update_one({"id": item_id}, {"$inc": {"stock": -1}})
+
+        # Low-stock alert for the shop owner when a purchase clears the shelf.
+        if int(item_doc.get('stock', 0)) - 1 <= 0:
+            try:
+                from npc_economy import _emit_out_of_stock_alert
+                await _emit_out_of_stock_alert(
+                    db, item_doc['shop_id'], item_id, item_doc.get('name', 'item'),
+                )
+            except Exception as e:  # pragma: no cover — best-effort
+                logger.warning(f"out-of-stock alert failed: {e}")
 
         # Renown nudge — buying from a city's shops modestly raises your standing
         # (unless the shop is NPC-owned in a city where you're already Legend).

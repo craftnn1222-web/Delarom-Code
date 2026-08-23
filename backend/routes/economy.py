@@ -212,6 +212,13 @@ def attach_economy_routes(
         specs_result = await es.seed_starter_specialties()
         return {"goods": goods_result, "specialties": specs_result}
 
+    @api_router.post("/economy/admin/seed-contracts")
+    async def admin_seed_contracts(admin: User = Depends(require_admin)):
+        """Seed a spread of active standing contracts so shop auto-pricing has
+        live prices across the shop-picker nations. Idempotent."""
+        es = EconomyService(db)
+        return await es.seed_starter_contracts()
+
     @api_router.post("/economy/admin/specialties")
     async def admin_upsert_specialty(
         payload: UpsertSpecialtyBody,

@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { getMyShop, createShop, addItem, getShopItems, deleteShopItem, updateShopItem } from '../utils/api';
+import { getMyShop, createShop, addItem, getShopItems, deleteShopItem, updateShopItem, getShopAlerts, markShopAlertsSeen } from '../utils/api';
 import { toast } from 'sonner';
 import AnimatedBackground from '../components/AnimatedBackground';
 import Navbar from '../components/Navbar';
@@ -11,11 +11,13 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger, Dialog
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 import { Store, Plus, Package, Coins, Trash2, Edit2, AlertTriangle } from 'lucide-react';
 import AutoPricingSection from '../components/AutoPricingSection';
+import RestockSection from '../components/RestockSection';
 import ShopCustomerFeed from '../components/ShopCustomerFeed';
 
 const MyShop = () => {
   const [shop, setShop] = useState(null);
   const [items, setItems] = useState([]);
+  const [alerts, setAlerts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isShopDialogOpen, setIsShopDialogOpen] = useState(false);
   const [isItemDialogOpen, setIsItemDialogOpen] = useState(false);
@@ -53,6 +55,8 @@ const MyShop = () => {
     source_nation: '',
     markup_pct: 30,
     is_auto_priced: false,
+    auto_restock: false,
+    restock_target: 10,
   };
 
   const [itemFormData, setItemFormData] = useState(defaultItemFormData);
@@ -68,6 +72,13 @@ const MyShop = () => {
       
       const itemsRes = await getShopItems(shopRes.data.id);
       setItems(itemsRes.data);
+
+      try {
+        const alertsRes = await getShopAlerts(shopRes.data.id);
+        setAlerts(alertsRes.data || []);
+      } catch (_e) {
+        setAlerts([]);
+      }
     } catch (error) {
       // User doesn't have a shop yet
       if (error.response?.status !== 404) {
@@ -138,6 +149,8 @@ const MyShop = () => {
       source_nation: item.source_nation || '',
       markup_pct: item.markup_pct ?? 30,
       is_auto_priced: Boolean(item.is_auto_priced),
+      auto_restock: Boolean(item.auto_restock),
+      restock_target: item.restock_target ?? 10,
     });
     setIsEditDialogOpen(true);
   };
@@ -162,6 +175,16 @@ const MyShop = () => {
   const handleDeleteClick = (item) => {
     setSelectedItem(item);
     setIsDeleteDialogOpen(true);
+  };
+
+  const handleDismissAlerts = async () => {
+    if (!shop) return;
+    try {
+      await markShopAlertsSeen(shop.id);
+      setAlerts([]);
+    } catch (error) {
+      toast.error('Could not dismiss alerts');
+    }
   };
 
   const handleDeleteItem = async () => {
@@ -282,6 +305,41 @@ const MyShop = () => {
       <Navbar />
       
       <div className="relative z-10 container mx-auto px-4 py-8">
+        {alerts.length > 0 && (
+          <div className="glass-dark border border-red-500/40 bg-red-900/15 p-4 rounded-xl mb-6" data-testid="low-stock-alerts">
+            <div className="flex items-start justify-between gap-4">
+              <div className="flex-1">
+                <div className="flex items-center gap-2 mb-2">
+                  <AlertTriangle className="w-5 h-5 text-red-400" />
+                  <h3 className="font-bold text-red-200">Sold out ({alerts.length})</h3>
+                </div>
+                <p className="text-sm text-red-100/80 mb-2">
+                  These items have sold out. Restock them or raise their auto-restock target.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {alerts.map((a) => (
+                    <span
+                      key={a.id}
+                      className="text-xs bg-red-500/20 text-red-200 px-2.5 py-1 rounded-full"
+                      data-testid={`low-stock-alert-${a.item_id}`}
+                    >
+                      {a.item_name}
+                    </span>
+                  ))}
+                </div>
+              </div>
+              <Button
+                onClick={handleDismissAlerts}
+                variant="outline"
+                size="sm"
+                className="text-red-200 border-red-500/40 hover:bg-red-900/30"
+                data-testid="dismiss-alerts-btn"
+              >
+                Dismiss
+              </Button>
+            </div>
+          </div>
+        )}
         <div className="glass-dark p-6 rounded-xl mb-8" data-testid="shop-header">
           <div className="flex items-center justify-between">
             <div>
@@ -431,6 +489,11 @@ const MyShop = () => {
                   </div>
 
                   <AutoPricingSection
+                    formData={itemFormData}
+                    setFormData={setItemFormData}
+                  />
+
+                  <RestockSection
                     formData={itemFormData}
                     setFormData={setItemFormData}
                   />
@@ -645,6 +708,11 @@ const MyShop = () => {
               </div>
 
               <AutoPricingSection
+                formData={itemFormData}
+                setFormData={setItemFormData}
+              />
+
+              <RestockSection
                 formData={itemFormData}
                 setFormData={setItemFormData}
               />

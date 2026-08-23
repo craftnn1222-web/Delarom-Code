@@ -9,12 +9,13 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 import { SHOP } from "@/constants/testIds";
-import { CREATE_NATIONS, Item, Shop, ShopApi, ShopCustomer } from "@/src/api";
+import { CREATE_NATIONS, Item, Shop, ShopAlert, ShopApi, ShopCustomer } from "@/src/api";
 import { ApiError } from "@/src/api/client";
 import { Button } from "@/src/components/Button";
 import { Header } from "@/src/components/Header";
@@ -32,6 +33,7 @@ export default function MyShopScreen() {
   const [shop, setShop] = useState<Shop | null>(null);
   const [items, setItems] = useState<Item[]>([]);
   const [customers, setCustomers] = useState<ShopCustomer[]>([]);
+  const [alerts, setAlerts] = useState<ShopAlert[]>([]);
   const [status, setStatus] = useState<Status>("loading");
 
   const [form, setForm] = useState({ name: "", description: "", nation: "Ammeonon" });
@@ -45,12 +47,14 @@ export default function MyShopScreen() {
     try {
       const s = await ShopApi.myShop();
       setShop(s);
-      const [its, cust] = await Promise.all([
+      const [its, cust, alertRows] = await Promise.all([
         ShopApi.items(s.id),
         ShopApi.customers(s.id).catch(() => [] as ShopCustomer[]),
+        ShopApi.alerts(s.id).catch(() => [] as ShopAlert[]),
       ]);
       setItems(its);
       setCustomers(cust);
+      setAlerts(alertRows);
       setStatus("ready");
     } catch (e) {
       if (e instanceof ApiError && e.status === 404) {
@@ -110,6 +114,12 @@ export default function MyShopScreen() {
       pathname: "/(tabs)/realm/shop-item",
       params: itemId ? { shopId: shop.id, itemId } : { shopId: shop.id },
     });
+  };
+
+  const dismissAlerts = async () => {
+    if (!shop) return;
+    await ShopApi.markAlertsSeen(shop.id).catch(() => {});
+    setAlerts([]);
   };
 
   return (
@@ -176,6 +186,30 @@ export default function MyShopScreen() {
             <Text style={styles.shopDesc}>{shop?.description}</Text>
             <Pill label={shop?.nation ?? ""} color={colors.gold} style={styles.shopNation} />
           </View>
+
+          {alerts.length > 0 ? (
+            <View style={styles.alertsBanner} testID={SHOP.alertsBanner}>
+              <View style={styles.alertsHead}>
+                <Ionicons name="warning" size={18} color={colors.rose} />
+                <Text style={styles.alertsTitle}>Sold out ({alerts.length})</Text>
+                <TouchableOpacity
+                  onPress={dismissAlerts}
+                  testID={SHOP.alertDismiss}
+                  style={styles.dismissBtn}
+                >
+                  <Text style={styles.dismissText}>Dismiss</Text>
+                </TouchableOpacity>
+              </View>
+              <Text style={styles.alertsSub}>Restock these or raise their auto-restock target.</Text>
+              <View style={styles.alertChips}>
+                {alerts.map((a) => (
+                  <View key={a.id} style={styles.alertChip}>
+                    <Text style={styles.alertChipText}>{a.item_name}</Text>
+                  </View>
+                ))}
+              </View>
+            </View>
+          ) : null}
 
           <Button
             title="Add item"
@@ -335,6 +369,33 @@ const styles = StyleSheet.create({
   shopDesc: { ...typography.body, color: colors.textSecondary, marginTop: spacing.xs },
   shopNation: { marginTop: spacing.sm },
   addBtn: { marginTop: spacing.md },
+  alertsBanner: {
+    marginTop: spacing.md,
+    padding: spacing.md,
+    borderRadius: radius.lg,
+    backgroundColor: colors.roseDim,
+    borderWidth: 1,
+    borderColor: colors.rose,
+  },
+  alertsHead: { flexDirection: "row", alignItems: "center", gap: 8 },
+  alertsTitle: { ...typography.bodyStrong, color: colors.rose, flex: 1 },
+  dismissBtn: {
+    paddingHorizontal: spacing.md,
+    paddingVertical: 5,
+    borderRadius: radius.pill,
+    borderWidth: 1,
+    borderColor: colors.rose,
+  },
+  dismissText: { ...typography.small, color: colors.rose, fontWeight: "700" },
+  alertsSub: { ...typography.small, color: colors.textSecondary, marginTop: spacing.xs },
+  alertChips: { flexDirection: "row", flexWrap: "wrap", gap: spacing.sm, marginTop: spacing.sm },
+  alertChip: {
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    borderRadius: radius.pill,
+    backgroundColor: colors.rose + "22",
+  },
+  alertChipText: { ...typography.small, color: colors.rose },
   sectionLabel: {
     ...typography.tiny,
     color: colors.gold,

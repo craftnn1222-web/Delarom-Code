@@ -180,6 +180,8 @@ export const getShopItems = (shopId) => api.get(`/shops/${shopId}/items`);
 export const purchaseItem = (itemId, characterId) => api.post(`/items/${itemId}/purchase`, { character_id: characterId });
 export const deleteShopItem = (itemId) => api.delete(`/items/${itemId}`);
 export const updateShopItem = (itemId, data) => api.put(`/items/${itemId}`, data);
+export const getShopAlerts = (shopId) => api.get(`/shops/${shopId}/alerts`);
+export const markShopAlertsSeen = (shopId) => api.post(`/shops/${shopId}/alerts/seen`);
 
 // Forums
 export const createForumPost = (data) => api.post('/forums/posts', data);
@@ -312,6 +314,8 @@ export const adminRepairWorldLocations = () =>
   api.post('/admin/repair-world-locations');
 export const adminShrinkImageStorage = (limit = 100) =>
   api.post(`/admin/shrink-image-storage?limit=${limit}`);
+export const adminSeedTradeContracts = () =>
+  api.post('/economy/admin/seed-contracts');
 
 // Visibility — fetch faction info for a single character or a batch
 export const getCharacterFaction = (characterId) =>

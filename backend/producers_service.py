@@ -429,6 +429,14 @@ class EconomyProducers:
         except Exception as e:  # pragma: no cover — best-effort side-effect
             logger.warning(f"NPC shop-customer simulation failed: {e}")
 
+        # Auto-restock player shops AFTER customers so shelves end the cycle full.
+        try:
+            from npc_economy import restock_player_shops
+            restock_summary = await restock_player_shops(self.db)
+            summary["shop_restock"] = restock_summary
+        except Exception as e:  # pragma: no cover — best-effort side-effect
+            logger.warning(f"Shop auto-restock failed: {e}")
+
         return summary
 
     async def recent_tick_log(self, limit: int = 20) -> List[Dict]:

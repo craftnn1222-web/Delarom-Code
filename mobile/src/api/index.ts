@@ -300,6 +300,9 @@ export interface Item {
   markup_pct?: number | null;
   is_auto_priced: boolean;
   last_repriced_at?: string | null;
+  auto_restock?: boolean;
+  restock_target?: number | null;
+  last_restocked_at?: string | null;
   created_at: string;
 }
 
@@ -317,6 +320,8 @@ export interface ItemCreatePayload {
   source_nation?: string | null;
   markup_pct?: number | null;
   is_auto_priced?: boolean;
+  auto_restock?: boolean;
+  restock_target?: number | null;
 }
 
 export interface ShopCustomer {
@@ -351,7 +356,20 @@ export const ShopApi = {
     api.put<Item>(`/items/${itemId}`, body),
   deleteItem: (itemId: string) => api.del<{ message: string }>(`/items/${itemId}`),
   customers: (shopId: string) => api.get<ShopCustomer[]>(`/shops/${shopId}/customers`),
+  alerts: (shopId: string) => api.get<ShopAlert[]>(`/shops/${shopId}/alerts`),
+  markAlertsSeen: (shopId: string) =>
+    api.post<{ cleared: number }>(`/shops/${shopId}/alerts/seen`, {}),
 };
+
+export interface ShopAlert {
+  id: string;
+  shop_id: string;
+  item_id: string;
+  item_name: string;
+  type: string;
+  seen: boolean;
+  created_at: string;
+}
 
 // ---------------- Economy (goods market — powers shop auto-pricing) ----------------
 export interface Good {
@@ -370,7 +388,51 @@ export const EconomyApi = {
   goods: () => api.get<Good[]>("/economy/goods"),
   market: (nation: string, citySlug: string) =>
     api.get<MarketRow[]>(`/economy/markets/${nation}/${citySlug}`),
+  // ---- Faction trade routes (Contract Manager) ----
+  factionContracts: (slug: string) =>
+    api.get<TradeContract[]>(`/economy/factions/${slug}/contracts`),
+  factionSpecialties: (slug: string) =>
+    api.get<{ faction: { slug: string; name: string; id: string }; specialties: FactionSpecialty[] }>(
+      `/economy/factions/${slug}/specialties`,
+    ),
+  createContract: (
+    slug: string,
+    body: {
+      from_faction_slug: string;
+      to_type: string;
+      good_slug: string;
+      to_city_slug?: string | null;
+      to_nation?: string;
+      tariff_pct: number;
+      quantity_per_tick: number;
+    },
+  ) => api.post<TradeContract>(`/economy/factions/${slug}/contracts`, body),
+  breakContract: (slug: string, contractId: string, reason: string) =>
+    api.post<TradeContract>(`/economy/factions/${slug}/contracts/${contractId}/break`, { reason }),
 };
+
+export interface FactionSpecialty {
+  id: string;
+  good_slug: string;
+  base_cost: number;
+  capacity?: number;
+  description?: string;
+}
+
+export interface TradeContract {
+  id: string;
+  from_faction_slug: string;
+  to_type: string;
+  to_city_slug?: string | null;
+  to_faction_slug?: string | null;
+  to_nation?: string;
+  good_slug: string;
+  base_cost_snapshot: number;
+  tariff_pct: number;
+  quantity_per_tick: number;
+  status: string;
+  break_reason?: string | null;
+}
 
 // ---------------- Factions ----------------
 export interface Faction {

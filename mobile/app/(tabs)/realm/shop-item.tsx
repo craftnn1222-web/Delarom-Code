@@ -59,6 +59,9 @@ export default function ShopItemFormScreen() {
   const [citySlug, setCitySlug] = useState("");
   const [markup, setMarkup] = useState("30");
 
+  const [autoRestock, setAutoRestock] = useState(false);
+  const [restockTarget, setRestockTarget] = useState("10");
+
   const [goods, setGoods] = useState<Good[]>([]);
   const [cityOptions, setCityOptions] = useState<PickerOption[]>([]);
   const [cityNation, setCityNation] = useState<Record<string, string>>({});
@@ -105,6 +108,8 @@ export default function ShopItemFormScreen() {
           setGood(it.source_good_slug ?? "");
           setCitySlug(it.source_city_slug ?? "");
           setMarkup(String(it.markup_pct ?? 30));
+          setAutoRestock(Boolean(it.auto_restock));
+          setRestockTarget(String(it.restock_target ?? 10));
         }
       }
       setStatus("ready");
@@ -183,6 +188,8 @@ export default function ShopItemFormScreen() {
       source_city_slug: autoPriced ? citySlug : null,
       source_nation: autoPriced ? cityNation[citySlug] : null,
       markup_pct: autoPriced ? parseInt(markup, 10) || 0 : null,
+      auto_restock: autoRestock,
+      restock_target: autoRestock ? parseInt(restockTarget, 10) || 0 : null,
     };
 
     setSaving(true);
@@ -337,6 +344,43 @@ export default function ShopItemFormScreen() {
               ) : null}
             </View>
 
+            {/* Auto-restock */}
+            <View style={styles.restockBox}>
+              <TouchableOpacity
+                testID={SHOP.restockToggle}
+                activeOpacity={0.85}
+                style={styles.autoToggle}
+                onPress={() => setAutoRestock((v) => !v)}
+              >
+                <Ionicons
+                  name={autoRestock ? "checkbox" : "square-outline"}
+                  size={20}
+                  color={colors.green}
+                />
+                <Ionicons name="refresh" size={16} color={colors.green} />
+                <Text style={styles.restockLabel}>Auto-restock this item</Text>
+              </TouchableOpacity>
+              <Text style={styles.autoHint}>
+                Top stock back up to a target level every ~6h economy cycle, so it never sells out.
+              </Text>
+              {autoRestock ? (
+                <>
+                  <TextField
+                    testID={SHOP.restockTarget}
+                    label="Restock up to (stock target)"
+                    value={restockTarget}
+                    onChangeText={setRestockTarget}
+                    keyboardType="number-pad"
+                  />
+                  <Text style={styles.restockCost}>
+                    Wholesale ~{Math.ceil((parseInt(price, 10) || 0) * 0.2) * (parseInt(restockTarget, 10) || 0)}g to
+                    fully refill ({Math.ceil((parseInt(price, 10) || 0) * 0.2)}g per unit). Charged from your gold
+                    each cycle; skipped if you can&apos;t afford it.
+                  </Text>
+                </>
+              ) : null}
+            </View>
+
             <Button
               title={editing ? "Save changes" : "Add item"}
               icon="checkmark"
@@ -378,6 +422,16 @@ const styles = StyleSheet.create({
   autoLabel: { ...typography.bodyStrong, color: colors.goldSoft },
   autoHint: { ...typography.small, color: colors.textSecondary, marginTop: spacing.xs },
   autoFields: { marginTop: spacing.md },
+  restockBox: {
+    borderWidth: 1,
+    borderColor: colors.green,
+    backgroundColor: colors.greenDim,
+    borderRadius: radius.md,
+    padding: spacing.md,
+    marginTop: spacing.md,
+  },
+  restockLabel: { ...typography.bodyStrong, color: colors.green },
+  restockCost: { ...typography.tiny, color: colors.textSecondary, marginTop: 4, textTransform: "none", lineHeight: 16 },
   previewRow: {
     flexDirection: "row",
     alignItems: "center",

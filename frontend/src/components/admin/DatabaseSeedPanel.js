@@ -5,7 +5,7 @@ import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Progress } from '../ui/progress';
 import { Switch } from '../ui/switch';
-import { adminSeedStarterFactions, adminSeedMasterNpcs, adminSeedRoyalsAndNobles, adminPopulateCitiesAi, adminCleanupGeoData, adminImageBatchSurvey, adminImageBatchStatus, adminImageBatchGenerate, adminImageBatchStop, adminSeedTitanSacredSites, adminSeedDhorKuldorCanon, adminSeedAllRealmsCanon, adminRepairWorldLocations, adminShrinkImageStorage } from '../../utils/api';
+import { adminSeedStarterFactions, adminSeedMasterNpcs, adminSeedRoyalsAndNobles, adminPopulateCitiesAi, adminCleanupGeoData, adminImageBatchSurvey, adminImageBatchStatus, adminImageBatchGenerate, adminImageBatchStop, adminSeedTitanSacredSites, adminSeedDhorKuldorCanon, adminSeedAllRealmsCanon, adminRepairWorldLocations, adminShrinkImageStorage, adminSeedTradeContracts } from '../../utils/api';
 
 /**
  * Database Seed Panel (admin-only) — current world data counts +
@@ -36,6 +36,23 @@ const DatabaseSeedPanel = ({ dbStatus, seedStatus, seeding, withImages, onToggle
   const [repairResult, setRepairResult] = useState(null);
   const [shrinkBusy, setShrinkBusy] = useState(false);
   const [shrinkResult, setShrinkResult] = useState(null);
+  const [contractsBusy, setContractsBusy] = useState(false);
+  const [contractsResult, setContractsResult] = useState(null);
+
+  const handleSeedContracts = async () => {
+    if (contractsBusy) return;
+    setContractsBusy(true);
+    setContractsResult(null);
+    try {
+      const r = await adminSeedTradeContracts();
+      setContractsResult(r.data);
+      toast.success(`Trade contracts seeded — ${r.data.created} new, ${r.data.available_market_rows} live market prices.`);
+    } catch (err) {
+      toast.error(err.response?.data?.detail || 'Failed to seed trade contracts.');
+    } finally {
+      setContractsBusy(false);
+    }
+  };
 
   const handleShrinkImages = async () => {
     if (shrinkBusy) return;
@@ -313,6 +330,42 @@ const DatabaseSeedPanel = ({ dbStatus, seedStatus, seeding, withImages, onToggle
             Nation slug: {repairResult.nation_slug?.fixed
               ? (repairResult.nation_slug?.note || 'fixed')
               : (repairResult.nation_slug?.reason || 'already canonical')}
+          </p>
+        </div>
+      )}
+    </div>
+
+    {/* Seed Trade Contracts — light up shop auto-pricing with live market prices */}
+    <div className="bg-amber-950/30 border border-amber-600/40 rounded-lg p-6 mb-6" data-testid="seed-contracts-panel">
+      <div className="flex items-center gap-3 mb-3">
+        <Sparkles className="w-6 h-6 text-amber-300" />
+        <h3 className="text-lg font-bold text-amber-200">Seed Trade Contracts (Live Shop Prices)</h3>
+      </div>
+      <p className="text-gray-400 mb-4">
+        Creates a spread of active standing contracts across all four shop-picker nations so
+        the goods market has <strong>live import prices</strong>. This is what makes shop
+        auto-pricing &ldquo;light up&rdquo; — owners can then source items from real goods and
+        cities. Purely additive &amp; idempotent — safe to run any time.
+      </p>
+      <Button
+        onClick={handleSeedContracts}
+        disabled={contractsBusy}
+        className="bg-gradient-to-r from-amber-700 to-yellow-700 hover:from-amber-800 hover:to-yellow-800 text-base px-6 py-5"
+        data-testid="seed-contracts-btn"
+      >
+        {contractsBusy ? (
+          <><Loader2 className="w-5 h-5 mr-2 animate-spin" />Seeding contracts…</>
+        ) : (
+          <><Sparkles className="w-5 h-5 mr-2" />Seed Trade Contracts</>
+        )}
+      </Button>
+      {contractsResult && (
+        <div className="mt-4 bg-black/40 border border-amber-500/30 rounded-md p-4 text-sm space-y-1" data-testid="seed-contracts-result">
+          <p className="text-amber-200">
+            <CheckCircle2 className="w-4 h-4 inline mr-1" />
+            <strong>{contractsResult.created}</strong> new contracts ·{' '}
+            <strong>{contractsResult.skipped}</strong> skipped ·{' '}
+            <strong>{contractsResult.available_market_rows}</strong> live market prices
           </p>
         </div>
       )}

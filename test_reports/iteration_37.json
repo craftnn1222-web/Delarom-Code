@@ -1,0 +1,46 @@
+{
+  "summary": "Iteration 37 — Full e2e validation of Contract Manager + Restock Cost + Low-Stock Alerts across BOTH web and mobile against the shared backend. Backend: 14/14 pytest checks pass (public list, admin create/break of any faction's contracts via is_admin bypass, slug-mismatch rejection, non-leader 403, alerts owner/non-owner/unknown/unauth gating, dismiss idempotency, restock ceil-20% math over 5 price/unit combos including the 100×5=100 case). Web: MyShop shows the seeded 'Sold out (1) — Sovereign's Veil' banner with data-testid low-stock-alerts + low-stock-alert-<id> + dismiss-alerts-btn; Add Item modal shows the Auto-restock cost hint 'Wholesale cost: ~200g to fully refill (20g per unit)' (data-testid restock-cost-hint) matching ceil(100*0.2)*10=200; Forgemaster's Guild → Trade Routes tab shows 9 active + 4 broken with a green 'Delivers at Xg' line for every active route (938g, 163g, 119g, 50g…) and an Open Route CTA visible to admin. Mobile (Expo web preview): /realm/my-shop shows shop-low-stock-alerts banner + shop-alerts-dismiss with the same 'Sovereign's Veil'; /realm/shop-item form shows the exact 'Wholesale ~200g to fully refill (20g per unit)' hint under the restock target; /realm/faction-routes?slug=forgemasters-guild renders faction-routes-screen with 13 faction-route-card-<id> cards (9 active + 4 broken), each showing 'Delivers at Xg' matching the web deltas exactly (938g/163g/119g), 9 faction-route-break-<id> buttons, and faction-new-route-button opens a modal exposing faction-route-good, faction-route-city, faction-route-tariff, faction-route-create-submit. Parity verified — same routes, same deliver prices, same banner + hint on both surfaces. No functional bugs found.",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": [
+        {"component": "styling", "issue": "Non-blocking deprecation warning in Expo web preview: '\"shadow*\" style props are deprecated. Use \"boxShadow\".' Not new to this iteration but worth cleaning up eventually. Reference: appears from multiple RN StyleSheet blocks — grep for 'shadowColor|shadowOffset|shadowOpacity|shadowRadius' in /app/mobile/app and /app/mobile/components."}
+      ]
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iter37_contract_manager_alerts.py",
+    "/app/test_reports/pytest/iter37.xml"
+  ],
+  "action_items": [
+    "(Nice-to-have) Replace deprecated 'shadow*' RN style props with 'boxShadow' across mobile styles to silence Expo web warnings.",
+    "(Housekeeping) The dismiss-then-verify test in test_iter37 re-inserts an alert directly via motor to keep the UI fixture visible for the next agent. That path relies on the shared MONGO_URL; document this or move to an admin-only /alerts/seed endpoint if you want the seed to live on the API surface."
+  ],
+  "critical_code_review_comments": [
+    "Owner check on GET /api/shops/{id}/alerts and POST /alerts/seen is correct — 403 for non-owner, 404 for unknown shop, 401 for unauthenticated. shop_alerts is projected without _id.",
+    "npc_economy.restock_player_shops correctly ceil()s wholesale fee as ((price*20 + 99)//100) * units — verified matches math.ceil(price*0.2)*units for all tested prices (100, 25, 3, 7). Skips owners who can't afford the FULL refill (all-or-nothing), which matches the spec and the UI hint copy.",
+    "_emit_out_of_stock_alert dedupes on (item_id, type, seen=False) so multiple sold-out events per item stack into a single unseen row — correct.",
+    "leader_create_contract / leader_break_contract use _ensure_faction_leader which correctly grants admins access to any faction (is_admin bypass) — verified by the admin creating+breaking a forgemasters-guild route where the admin is not the faction leader.",
+    "GET /api/economy/factions/{slug}/contracts returns base_cost_snapshot + tariff_pct on every row, which is exactly what the web FactionTradeRoutesTab and mobile faction-routes screen need to compute 'Delivers at Xg'. Delivered totals match between web and mobile."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter37_contract_manager_alerts.py"
+  ],
+  "success_rate": {"backend": "100% (14/14)", "frontend": "100% (web MyShop alerts + restock hint + Trade Routes tab; mobile my-shop alerts + shop-item hint + faction-routes screen + new-route modal all verified)"},
+  "test_credentials": "Admin craftnn1222@gmail.com / admin123 (owns shop 41fc2225-2fbc-4be9-abce-8ae1e166a37c, has is_admin so manages any faction's routes). Non-admin rep_tester_round2@delarom.com / Testpass123! used for 403 tests.",
+  "seed_data_creation": "Test created + broke one temporary forgemasters-guild → ironhold contract (backend); low-stock alert re-inserted after dismiss test so the mobile/web UI seed remains visible.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend regression: /app/backend/tests/test_iter37_contract_manager_alerts.py (14 tests). Endpoints: GET/POST /api/economy/factions/{slug}/contracts, POST /api/economy/factions/{slug}/contracts/{id}/break, GET /api/shops/{id}/alerts, POST /api/shops/{id}/alerts/seen. Ceil-20% wholesale formula covered directly. UI testIDs confirmed: WEB — low-stock-alerts, low-stock-alert-<itemId>, dismiss-alerts-btn, restock-cost-hint, faction-trade-routes-tab, trade-routes-add-btn, route-active-<id>, route-delivered-<id>, route-break-btn-<id>. MOBILE — shop-low-stock-alerts, shop-alerts-dismiss, shop-item-restock-toggle, shop-item-restock-target, shop-item-name/price/stock/category, shop-add-item-button, faction-routes-screen, faction-route-card-<id>, faction-route-break-<id>, faction-new-route-button, faction-route-good/city/tariff/create-submit. Forgemasters-guild had 9 active + 4 broken routes at the time of testing; delivered prices on web and mobile matched exactly (938g, 163g, 119g, 50g...).",
+  "rca of the issue": ""
+}
