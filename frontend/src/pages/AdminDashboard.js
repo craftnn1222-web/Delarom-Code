@@ -21,6 +21,7 @@ import IpBansTab from '../components/admin/IpBansTab';
 import LocationsTab from '../components/admin/LocationsTab';
 import DatabaseSeedPanel from '../components/admin/DatabaseSeedPanel';
 import CharterReviewTab from '../components/admin/CharterReviewTab';
+import HealthPanel from '../components/admin/HealthPanel';
 
 
 const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
@@ -675,6 +676,11 @@ const AdminDashboard = () => {
                 Charters
               </TabsTrigger>
             )}
+            {currentUser?.role === 'admin' && (
+              <TabsTrigger value="health" className="data-[state=active]:bg-emerald-600" data-testid="admin-tab-health">
+                Health
+              </TabsTrigger>
+            )}
           </TabsList>
 
           {/* Applications Tab (Admin Only) */}
@@ -769,6 +775,12 @@ const AdminDashboard = () => {
           {currentUser?.role === 'admin' && (
             <TabsContent value="charters" className="space-y-6">
               <CharterReviewTab />
+            </TabsContent>
+          )}
+
+          {currentUser?.role === 'admin' && (
+            <TabsContent value="health" className="space-y-6">
+              <HealthPanel />
             </TabsContent>
           )}
 

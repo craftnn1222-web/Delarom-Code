@@ -682,6 +682,26 @@ def attach_admin_routes(
         from city_location_image_batcher import CityLocationImageBatcher
         return CityLocationImageBatcher.request_stop()
 
+    # ================== WATCHDOG / HEALTH ==================
+
+    @api_router.get("/admin/health")
+    async def admin_health(admin: User = Depends(require_admin)):
+        """Latest watchdog snapshot (services, disk, image batch, integrity)."""
+        from watchdog_service import get_health
+        return await get_health(db)
+
+    @api_router.get("/admin/health/incidents")
+    async def admin_health_incidents(limit: int = 50, admin: User = Depends(require_admin)):
+        """Recent watchdog incidents (auto-fixes + warnings), newest first."""
+        from watchdog_service import get_incidents
+        return await get_incidents(db, limit)
+
+    @api_router.post("/admin/health/check-now")
+    async def admin_health_check_now(admin: User = Depends(require_admin)):
+        """Run all health checks immediately (with auto-remediation)."""
+        from watchdog_service import run_health_checks
+        return await run_health_checks(db, remediate=True)
+
     @api_router.post("/admin/seed-titan-sacred-sites")
     async def admin_seed_titan_sacred_sites(admin: User = Depends(require_admin)):
         """Tier 2d — Annotate canonical locations with `titan_sacred_site`

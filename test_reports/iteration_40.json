@@ -1,0 +1,51 @@
+{
+  "summary": "Verified image storage migration (object storage) + operational watchdog + admin Health tab. All 12 backend pytest cases pass (image serving 200 / HEAD / ETag-304 / 404, admin health snapshot shape, admin-only auth on /admin/health, /admin/health/incidents, /admin/health/check-now, non-admin & anonymous rejected, data-integrity probe reports images_in_db=0 & orphan_shops=0). Web Admin Health tab renders 'System Healthy' with all 5 service cards (backend, database, image_batch, data_integrity, errors), the incident log ('No incidents recorded. All quiet.') and 'Run check now' button which triggers /admin/health/check-now (200). Real end-to-end image render verified on web nation page /nations/ammeonon: 23 <img src='/api/image/...'> tags all loaded (naturalWidth=1536, 0 broken). Object-storage-backed images serve correctly. Mobile app boots, login flow works to /dashboard; backend /api/image/{id} is shared so mobile rendering uses the same verified endpoint.",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/image/{id}", "issue": "Cloudflare CDN rewrites Cache-Control to 'no-store, no-cache, must-revalidate' (CF-Cache-Status: DYNAMIC), overriding the backend's 'public, max-age=86400, immutable'. ETag/304 still works so browser conditional caching is unaffected, but CDN edge caching does not kick in. Origin behavior is correct; consider CF Page Rules to allow public caching for /api/image/*."}
+    ]
+  },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": [
+        {"component": "Image", "issue": "Console warning: 'Image: style.resizeMode is deprecated. Please use props.resizeMode.' — a mobile Image component still passes resizeMode via style. Not related to this iteration's storage change, but visible during testing."},
+        {"component": "View/Pressable", "issue": "Console warning: 'props.pointerEvents is deprecated. Use style.pointerEvents.' Appears on login and dashboard screens. Not related to this iteration."}
+      ]
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iter40_watchdog_and_image_storage.py",
+    "/app/test_reports/pytest/iter40_watchdog.xml"
+  ],
+  "action_items": [
+    "(Optional) Add a Cloudflare Page Rule so /api/image/* is cacheable at the edge; origin already sets 'public, max-age=86400, immutable' but CDN currently marks it DYNAMIC/no-store.",
+    "(Unrelated to this change, but observed) Migrate the deprecated RN Image style.resizeMode -> props.resizeMode and props.pointerEvents -> style.pointerEvents in mobile components."
+  ],
+  "critical_code_review_comments": [
+    "watchdog_service.py:186 — run_health_checks pops the 5xx error counter EVERY time it is called with remediate=True. The admin 'Run check now' button hits check-now with remediate=True, which resets the counter — so admins clicking it will always see errors count '0 server error(s) since last check'. That is arguably the intended semantics (a manual check IS 'the last check'), but the loop cadence (120s) and the manual button share the same counter, so a manual check can hide a real error spike from the next scheduled cycle. Consider decoupling manual checks from the counter reset.",
+    "watchdog_service.py:222 — the 'log non-remediated warnings' branch is gated on 'not actions' which suppresses ordinary warning-level incidents whenever ANY remediation ran that cycle. This can silently drop unrelated warnings (e.g. data_integrity) when the watchdog also relaunched a stalled batch. Consider logging each probe independently.",
+    "object_storage.py — put_object / get_object are blocking `requests` calls. image_service wraps them in asyncio.to_thread on the hot path (good), but any future direct caller in an async context could accidentally block the event loop. Consider marking these functions as sync-only in a docstring or providing an async wrapper.",
+    "server.py:2779 — Cache-Control 'public, max-age=86400, immutable' is being overridden by Cloudflare (CF-Cache-Status: DYNAMIC). Add 'CDN-Cache-Control' and 'Cloudflare-CDN-Cache-Control' headers, or a page rule, to actually get edge caching for the 2151 immutable image bytes."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter40_watchdog_and_image_storage.py"
+  ],
+  "success_rate": {"backend": "100%", "frontend": "100%"},
+  "test_credentials": "Admin craftnn1222@gmail.com / admin123; non-admin rep_tester_round2@delarom.com / Testpass123!",
+  "seed_data_creation": "None. Read-only tests + pre-existing image_blobs entries.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 40 verified: image-blob bytes moved to Emergent object storage (image_blobs docs now have `storage_path`, not `data`); watchdog + admin Health tab live. Backend regression test lives at /app/backend/tests/test_iter40_watchdog_and_image_storage.py — reusable. Image batch is intentionally paused (admin stop) per main agent's note; watchdog does not auto-relaunch admin-stopped batches. Do NOT unpause it. Sample admin-verified working image id: 701d22bd-3e32-4f28-8f95-2185206abc68 (returned 1536x1024 PNG).",
+  "rca of the issue": "N/A — no failures. The one minor observation (Cache-Control override) is a CDN policy, not an origin bug."
+}

@@ -658,6 +658,30 @@ async def resume_image_batch_if_orphaned() -> None:
 
 
 @app.on_event("startup")
+async def init_object_storage() -> None:
+    """Warm the Emergent object-storage session key so image uploads/serves
+    don't pay the init cost on first request. Best-effort."""
+    try:
+        import object_storage
+        await asyncio.to_thread(object_storage.init_storage)
+        logger.info("object storage initialized")
+    except Exception as e:
+        logger.warning(f"object storage init failed on startup: {e}")
+
+
+@app.on_event("startup")
+async def start_watchdog() -> None:
+    """Launch the operational watchdog loop (health checks + safe auto-fixes)."""
+    try:
+        import watchdog_service
+        asyncio.create_task(watchdog_service.watchdog_loop(db))
+        logger.info("watchdog scheduled")
+    except Exception as e:
+        logger.warning(f"watchdog failed to start: {e}")
+
+
+
+@app.on_event("startup")
 async def ensure_default_admin_user() -> None:
     """Ensure a default admin user exists in the configured database.
 
@@ -2764,22 +2788,23 @@ async def get_image_blob(image_id: str, request: Request):
     doc = await img_service.get(image_id)
     if not doc:
         raise HTTPException(status_code=404, detail="Image not found")
-    data = doc.get("data")
-    if not data:
-        raise HTTPException(status_code=404, detail="Image data missing")
     etag = f'"{image_id}"'
     headers = {
         "Cache-Control": "public, max-age=86400, immutable",
         "ETag": etag,
     }
-    # Honour If-None-Match for 304 cache hits
+    # Honour If-None-Match for 304 cache hits (skips fetching bytes entirely)
     if request.headers.get("if-none-match") == etag:
         return FastAPIResponse(status_code=304, headers=headers)
+    fetched = await img_service.fetch_bytes(doc)
+    if not fetched:
+        raise HTTPException(status_code=404, detail="Image data missing")
+    data, mime = fetched
     # HEAD: return headers only (no body)
-    body = b"" if request.method == "HEAD" else bytes(data)
+    body = b"" if request.method == "HEAD" else data
     return FastAPIResponse(
         content=body,
-        media_type=doc.get("mime_type", "image/png"),
+        media_type=mime,
         headers=headers,
     )
 
@@ -2928,6 +2953,28 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+@app.middleware("http")
+async def _watchdog_error_counter(request: Request, call_next):
+    """Feed 5xx / unhandled errors to the watchdog so it can flag error spikes."""
+    try:
+        response = await call_next(request)
+    except Exception:
+        try:
+            import watchdog_service
+            watchdog_service.record_error()
+        except Exception:
+            pass
+        raise
+    if response.status_code >= 500:
+        try:
+            import watchdog_service
+            watchdog_service.record_error()
+        except Exception:
+            pass
+    return response
+
 
 # Logging is initialised at the top of the file (right after `app = FastAPI()`).
 

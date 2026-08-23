@@ -480,6 +480,20 @@ Two economy features, both with full web/mobile parity.
 - Backend: routes in `routes/shops.py` (treasury deposit/withdraw, buy-offers create/list/accept/decline, `GET /api/buy-offers/mine`) + `npc_economy.py`. Owner-only auth enforced; cross-shop access 403.
 - **Verified** iteration_39: backend 12/12 pytest, web + mobile parity, no blockers. (Non-blocking: `shop_buyback` txn not tagged with paid_from; custom-slug TOCTOU could use a unique index on `goods.slug`.)
 
+## Image storage → Object storage migration (2026-08-23 — infra)
+Root cause of the recurring disk-full risk: AI images were stored as BSON Binary blobs inside MongoDB (`image_blobs` collection, ~3.9GB of a ~3.9GB DB).
+- **Fix**: images now live in **Emergent-managed object storage** (`object_storage.py`); MongoDB keeps only a tiny metadata doc (`image_id`, `storage_path`, mime, size). Public contract UNCHANGED — still `image_id` + `GET /api/image/{image_id}` (now proxies bytes from object storage).
+- `ImageService.store_bytes` uploads to object storage; `fetch_bytes` reads from object storage or legacy Binary (back-compat). Batcher + lazy-migration paths automatically use object storage now.
+- **Migrated** all 2,151 existing blobs (`migrate_images_to_objstore.py`, 0 failed) + compacted: DB data **3,911MB → 10.9MB**, disk **54% → 26% used**. New batch images write straight to object storage (0 blobs left in Mongo).
+- Emergent does NOT support multi-instance/sharded storage (per support) — object storage is the scalable answer; MongoDB Atlas + object storage is the production path.
+
+## Operational Watchdog + Admin Health dashboard (2026-08-23, iteration_40)
+- **Backend watchdog** (`watchdog_service.py`): a loop every 120s probes database (+ disk %), the image batch, data integrity (orphan shops, `images_in_db` regression signal), and recent 5xx errors; rolls up an overall status; logs incidents to `health_incidents`.
+- **Safe auto-remediation**: relaunches a **crash-stalled** image batch (but respects a deliberate admin stop); stops the batch if disk is **critical** to protect the DB. Incident logging deduped on status transitions; 5xx counter only reset on the scheduled loop.
+- **Routes** (admin-only): `GET /api/admin/health`, `GET /api/admin/health/incidents`, `POST /api/admin/health/check-now`. 5xx counter fed by an HTTP middleware.
+- **Web Admin → Health tab** (`components/admin/HealthPanel.js`): overall banner, service cards, incident log, "Run check now", auto-refresh 30s. (Admin ops tool → web only.)
+- **Verified** iteration_40: backend 12/12 pytest, web Health tab e2e, image rendering across the app (23 imgs, 0 broken), watchdog remediation unit-tested (relaunch / respect-admin-stop / no-op-when-running). Non-blocking: Cloudflare rewrites image Cache-Control to no-store (no edge caching; ETag/304 still work).
+
 ## Backlog (P1 → P3)
 - **P1**: Refactor `server.py` (3900+ lines) into route modules.
 - **P1 (security)**: Migrate auth token from `localStorage` to httpOnly cookies (23 instances across `api.js`, `Login.js`, `AdminDashboard.js`, `AuthContext.js`, `ProtectedRoute.js`).

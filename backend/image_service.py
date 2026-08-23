@@ -12,14 +12,16 @@ every list endpoint to many megabytes.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import re
 import uuid
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
-from bson.binary import Binary
 from motor.motor_asyncio import AsyncIOMotorDatabase
+
+import object_storage
 
 
 # data:<mime>;base64,<payload>
@@ -65,16 +67,37 @@ class ImageService:
         return await self.coll.find_one({"id": image_id}, {"_id": 0})
 
     async def store_bytes(self, raw: bytes, mime_type: str = "image/png") -> str:
-        """Persist raw bytes and return the new image_id."""
+        """Persist raw bytes to object storage and return the new image_id.
+
+        Only a tiny metadata doc lives in Mongo (id, storage_path, mime, size);
+        the bytes themselves live in Emergent object storage."""
         image_id = str(uuid.uuid4())
+        ext = object_storage.ext_for_mime(mime_type)
+        path = f"{object_storage.APP_NAME}/images/{image_id}.{ext}"
+        result = await asyncio.to_thread(object_storage.put_object, path, raw, mime_type)
         await self.coll.insert_one({
             "id": image_id,
             "mime_type": mime_type,
-            "data": Binary(raw),
-            "size": len(raw),
+            "storage_path": result["path"],
+            "size": result.get("size", len(raw)),
             "created_at": _now_iso(),
         })
         return image_id
+
+    async def fetch_bytes(self, doc: dict) -> Optional[Tuple[bytes, str]]:
+        """Return (bytes, mime) for an image doc, from object storage or a
+        legacy in-Mongo Binary blob. Returns None if the bytes are gone."""
+        if not doc:
+            return None
+        mime = doc.get("mime_type", "image/png")
+        path = doc.get("storage_path")
+        if path:
+            data, ctype = await asyncio.to_thread(object_storage.get_object, path)
+            return data, (mime or ctype)
+        legacy = doc.get("data")
+        if legacy:
+            return bytes(legacy), mime
+        return None
 
     async def store_from_data_url(self, data_url: str) -> Optional[str]:
         """Convenience: decode a data: URL and persist. Returns image_id or None."""
