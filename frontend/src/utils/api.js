@@ -69,6 +69,7 @@ export const changePassword = (data) => api.post('/auth/change-password', data);
 export const sendLetter = (data) => api.post('/letters', data);
 export const getActiveCharacter = () => api.get('/characters/active');
 export const setActiveCharacterApi = (characterId) => api.put('/characters/active', { character_id: characterId });
+export const getContinueState = () => api.get('/me/continue');
 
 export const fetchInbox = (characterId) => api.get(`/characters/${characterId}/letters/inbox`);
 export const fetchSentLetters = (characterId) => api.get(`/characters/${characterId}/letters/sent`);

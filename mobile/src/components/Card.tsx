@@ -7,10 +7,12 @@ interface CardProps {
   children: React.ReactNode;
   style?: ViewStyle;
   accent?: "gold" | "violet" | "rose" | "none";
+  testID?: string;
 }
 
-export const Card = ({ children, style, accent = "none" }: CardProps) => (
+export const Card = ({ children, style, accent = "none", testID }: CardProps) => (
   <View
+    testID={testID}
     style={[
       styles.card,
       accent === "gold" && { borderColor: colors.goldBorder },

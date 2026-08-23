@@ -4,7 +4,7 @@ import { useCallback, useState } from "react";
 import { Modal, Pressable, StyleSheet, Text, TouchableOpacity, View } from "react-native";
 
 import { DASHBOARD } from "@/constants/testIds";
-import { WorldApi, WorldClock } from "@/src/api";
+import { ContinueState, MeApi, WorldApi, WorldClock } from "@/src/api";
 import { Card } from "@/src/components/Card";
 import { Portrait, XpBar } from "@/src/components/CharacterBits";
 import { EmptyState } from "@/src/components/StateViews";
@@ -17,13 +17,19 @@ export default function DashboardScreen() {
   const { user, signOut, refresh } = useAuth();
   const { character: hero, characters, reload: reloadChars, setActive } = useActiveCharacter();
   const [clock, setClock] = useState<WorldClock | null>(null);
+  const [cont, setCont] = useState<ContinueState | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
   const [switchingId, setSwitchingId] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [, wc] = await Promise.allSettled([reloadChars(), WorldApi.clock()]);
+    const [, wc, ct] = await Promise.allSettled([
+      reloadChars(),
+      WorldApi.clock(),
+      MeApi.continueState(),
+    ]);
     if (wc.status === "fulfilled") setClock(wc.value);
+    if (ct.status === "fulfilled") setCont(ct.value);
     refresh();
   }, [refresh, reloadChars]);
 
@@ -55,6 +61,8 @@ export default function DashboardScreen() {
 
   const calendar = clock?.calendar;
   const phase = clock?.time_of_day?.phase;
+  const scene = cont?.last_scene ?? null;
+  const party = cont?.active_party ?? null;
 
   return (
     <Screen scroll refreshing={refreshing} onRefresh={onRefresh} testID={DASHBOARD.screen}>
@@ -146,6 +154,70 @@ export default function DashboardScreen() {
           />
         </Card>
       )}
+
+      {scene || party ? (
+        <>
+          <Text style={styles.sectionTitle}>Continue</Text>
+          <Card testID={DASHBOARD.continueCard}>
+            {scene ? (
+              <TouchableOpacity
+                testID={DASHBOARD.continueRp}
+                style={styles.continueRow}
+                activeOpacity={0.85}
+                onPress={() =>
+                  router.push({
+                    pathname: "/rp",
+                    params: {
+                      nation: scene.nation,
+                      location: scene.location,
+                      name: scene.location_name,
+                    },
+                  })
+                }
+              >
+                <View style={[styles.continueIcon, { backgroundColor: colors.violetDim }]}>
+                  <Ionicons name="chatbubbles-outline" size={20} color={colors.violet} />
+                </View>
+                <View style={styles.flex}>
+                  <Text style={styles.continueLabel}>Last Scene</Text>
+                  <Text style={styles.continueTitle} numberOfLines={1}>
+                    {scene.location_name}
+                  </Text>
+                  <Text style={styles.continueMeta} numberOfLines={1}>
+                    {scene.city ? `${scene.city} · ` : ""}as {scene.character_name}
+                  </Text>
+                </View>
+                <Ionicons name="play-circle" size={26} color={colors.violet} />
+              </TouchableOpacity>
+            ) : null}
+            {scene && party ? <View style={styles.continueDivider} /> : null}
+            {party ? (
+              <TouchableOpacity
+                testID={DASHBOARD.continueParty}
+                style={styles.continueRow}
+                activeOpacity={0.85}
+                onPress={() =>
+                  router.push({ pathname: "/(tabs)/realm/party", params: { id: party.id } })
+                }
+              >
+                <View style={[styles.continueIcon, { backgroundColor: "rgba(212,175,110,0.15)" }]}>
+                  <Ionicons name="people" size={20} color={colors.gold} />
+                </View>
+                <View style={styles.flex}>
+                  <Text style={styles.continueLabel}>Active Party</Text>
+                  <Text style={styles.continueTitle} numberOfLines={1}>
+                    {party.name}
+                  </Text>
+                  <Text style={[styles.continueMeta, styles.capitalize]} numberOfLines={1}>
+                    {party.status} · {party.member_count} member{party.member_count === 1 ? "" : "s"}
+                  </Text>
+                </View>
+                <Ionicons name="chevron-forward" size={20} color={colors.textMuted} />
+              </TouchableOpacity>
+            ) : null}
+          </Card>
+        </>
+      ) : null}
 
       <Text style={styles.sectionTitle}>Explore</Text>
       <View style={styles.quickRow}>
@@ -334,6 +406,24 @@ const styles = StyleSheet.create({
   heroOptionInfo: { flex: 1 },
   heroOptionName: { ...typography.bodyStrong, color: colors.textPrimary },
   heroOptionMeta: { ...typography.small, color: colors.textSecondary, marginTop: 2 },
+  continueRow: { flexDirection: "row", alignItems: "center", gap: spacing.md, paddingVertical: spacing.xs },
+  continueIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: radius.md,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  continueLabel: {
+    ...typography.small,
+    color: colors.textMuted,
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  continueTitle: { ...typography.bodyStrong, color: colors.textPrimary },
+  continueMeta: { ...typography.small, color: colors.textSecondary, marginTop: 1 },
+  continueDivider: { height: 1, backgroundColor: colors.border, marginVertical: spacing.sm },
+  capitalize: { textTransform: "capitalize" },
   heroRow: { flexDirection: "row", alignItems: "center" },
   heroInfo: { flex: 1, marginLeft: spacing.md },
   heroName: { ...typography.h2, color: colors.textPrimary },

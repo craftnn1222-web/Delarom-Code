@@ -20,6 +20,9 @@ export const DASHBOARD = {
   switchHeroButton: "dashboard-switch-hero-button",
   heroSwitcher: "dashboard-hero-switcher",
   heroOption: (id) => `dashboard-hero-option-${id}`,
+  continueCard: "dashboard-continue-card",
+  continueRp: "dashboard-continue-rp",
+  continueParty: "dashboard-continue-party",
 };
 
 export const CHARACTERS = {

@@ -1,0 +1,45 @@
+{
+  "summary": "Iteration 33 — 'Continue Where You Left Off' dashboard card verified end-to-end on backend, web, and mobile. Backend GET /api/me/continue returns both last_scene and active_party for the admin (Ancient Market Square / The Ashen Vanguard) and nulls for a freshly-seeded empty-state user. Web shows the continue-card with a working continue-rp-link (already verified by main agent) and continue-party-link that navigates to /parties/<id> and renders the party page. Mobile shows the dashboard-continue-card with both dashboard-continue-rp (already verified by main agent) and dashboard-continue-party rows; tapping the party row navigates to /realm/party?id=<id> and renders 'The Ashen Vanguard'. On both surfaces the card is hidden entirely for a user with no RP and no party. Cross-platform parity holds. No blocking issues. Two pre-existing RN-Web console warnings persist ('shadow* style props are deprecated. Use \"boxShadow\"' and 'props.pointerEvents is deprecated. Use style.pointerEvents') — same as iteration_32, non-blocking.",
+  "platforms_tested": ["web", "mobile"],
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "web": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": [
+        {"component": "RN-Web (global)", "issue": "Deprecation warning: 'shadow* style props are deprecated. Use \"boxShadow\"'. Non-blocking, appears on any screen with elevated cards. Same warning class as the pointerEvents one from iteration_32."},
+        {"component": "TouchableOpacity/Pressable", "issue": "Deprecation warning: 'props.pointerEvents is deprecated. Use style.pointerEvents'. Non-blocking; also flagged in iteration_32."}
+      ]
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_continue_dashboard.py",
+    "/app/backend/tests/_seed_empty_user.py",
+    "/app/test_reports/pytest/iter33_continue.xml"
+  ],
+  "action_items": [
+    "(Optional cleanup, non-blocking) Migrate mobile styles off the deprecated `shadow*` style props to `boxShadow` and `pointerEvents` prop to `style.pointerEvents` to silence RN-Web console warnings."
+  ],
+  "critical_code_review_comments": [
+    "server.py get_continue_state: uses correct Mongo indexes (user_id + status filter on parties, user_id on location_rp) and correctly excludes accepted quests per spec.",
+    "server.py: last_scene.location_name / city are resolved from the locations collection with graceful title-casing fallback if the location doc is missing — safe.",
+    "server.py: active_party query correctly restricts status to ['recruiting','active'] and sorts by created_at desc; consider sorting by an 'updated_at' field in the future if a user has multiple active parties (currently returns the most-recently-created, not the most-recently-touched).",
+    "frontend Dashboard.js: card is only rendered when (last_scene || active_party) — matches spec ('hidden entirely for empty state'). Verified live.",
+    "mobile dashboard.tsx: same conditional (`scene || party`) — matches. Party row navigates via router.push({pathname:'/(tabs)/realm/party', params:{id}}) — resolves to /realm/party?id=<uuid> on RN-Web, matches expected deep link.",
+    "No hardcoded URLs, no _id leak, no ObjectId in response — clean."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_continue_dashboard.py",
+    "/app/backend/tests/_seed_empty_user.py"
+  ],
+  "success_rate": {"backend": "100% (6/6)", "frontend": "100% (web + mobile flows verified)"},
+  "test_credentials": "Admin: craftnn1222@gmail.com / admin123. Empty-state user: TEST_continue_empty@delarom.com / Testpass123! (seeded directly in Mongo via /app/backend/tests/_seed_empty_user.py — persists across runs; safe to re-run, the seed script is idempotent and re-cleans RP/party links).",
+  "seed_data_creation": "Seeded a member-role active user TEST_continue_empty@delarom.com in the users collection (no characters, no RP docs, not a member of any party). Seed script at /app/backend/tests/_seed_empty_user.py.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Backend tests live at /app/backend/tests/test_continue_dashboard.py (6 tests). Empty-state relies on TEST_continue_empty@delarom.com seeded in Mongo — re-run tests/_seed_empty_user.py if that account is ever cleaned. Admin's continue payload as of this run: last_scene = Ancient Market Square (ammeonon/ancient-market-square, azure, as Ausar Veltraus), active_party = 'The Ashen Vanguard' (id=9ac29232-6dcb-4cc9-986e-e7d3f43fff30, status=recruiting, 1 member). Mobile deep link for party is /realm/party?id=<uuid> (NOT /parties/<id> like on web) — this is by design; the RN app has its own routing.",
+  "rca of the issue": "No issue — feature works as designed on all three surfaces."
+}

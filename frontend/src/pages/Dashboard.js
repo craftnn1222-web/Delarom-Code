@@ -1,19 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { getMe, getMyCharacters, getTransactions } from '../utils/api';
+import { getMe, getMyCharacters, getTransactions, getContinueState } from '../utils/api';
 import { useCharacter } from '../contexts/CharacterContext';
 import FactionBadge from '../components/factions/FactionBadge';
 import useFactionBadges from '../hooks/useFactionBadges';
 import AnimatedBackground from '../components/AnimatedBackground';
 import Navbar from '../components/Navbar';
 import { Button } from '../components/ui/button';
-import { Coins, Scroll, Sword, ShoppingBag, TrendingUp, TrendingDown, Users, Skull, Flag } from 'lucide-react';
+import { Coins, Scroll, Sword, ShoppingBag, TrendingUp, TrendingDown, Users, Skull, Flag, PlayCircle, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
 
 const Dashboard = () => {
   const [user, setUser] = useState(null);
   const [characters, setCharacters] = useState([]);
   const [transactions, setTransactions] = useState([]);
+  const [continueState, setContinueState] = useState(null);
   const [loading, setLoading] = useState(true);
 
   const { characters: roster, activeCharacter, switchCharacter } = useCharacter();
@@ -45,14 +46,16 @@ const Dashboard = () => {
     // allSettled so a transient failure of any one source (e.g. transactions
     // API blip) doesn't wipe out the others. Previously a single failure made
     // the whole dashboard show "Failed to load" with no characters listed.
-    const [userRes, charRes, transRes] = await Promise.allSettled([
+    const [userRes, charRes, transRes, contRes] = await Promise.allSettled([
       getMe(),
       getMyCharacters(),
-      getTransactions()
+      getTransactions(),
+      getContinueState()
     ]);
     if (userRes.status === 'fulfilled') setUser(userRes.value.data);
     if (charRes.status === 'fulfilled') setCharacters(charRes.value.data);
     if (transRes.status === 'fulfilled') setTransactions(transRes.value.data.slice(0, 5));
+    if (contRes.status === 'fulfilled') setContinueState(contRes.value.data);
     if (userRes.status === 'rejected' && charRes.status === 'rejected') {
       // Both critical sources failed — surface the toast. Single-source
       // failures are tolerated silently with empty defaults.
@@ -144,6 +147,57 @@ const Dashboard = () => {
             </div>
           )}
         </div>
+
+        {/* Continue where you left off */}
+        {(continueState?.last_scene || continueState?.active_party) && (
+          <div className="glass-dark p-6 rounded-2xl mb-8" data-testid="continue-card">
+            <div className="flex items-center gap-3 mb-4">
+              <PlayCircle className="w-5 h-5 text-emerald-300" />
+              <h2 className="text-xl font-bold text-emerald-200">Continue Where You Left Off</h2>
+            </div>
+            <div className="grid md:grid-cols-2 gap-4">
+              {continueState?.last_scene && (
+                <Link
+                  to={`/roleplay/${continueState.last_scene.nation}/${continueState.last_scene.location}`}
+                  data-testid="continue-rp-link"
+                  className="flex items-center gap-4 p-4 rounded-xl border border-emerald-400/30 bg-emerald-500/10 hover:border-emerald-400/70 transition-all group"
+                >
+                  <div className="w-11 h-11 rounded-lg bg-emerald-800/40 flex items-center justify-center shrink-0">
+                    <MapPin className="w-6 h-6 text-emerald-300" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs uppercase tracking-wide text-emerald-400/80">Last Scene</p>
+                    <p className="text-white font-semibold truncate">{continueState.last_scene.location_name}</p>
+                    <p className="text-xs text-gray-400 truncate">
+                      {continueState.last_scene.city ? `${continueState.last_scene.city} • ` : ''}
+                      as {continueState.last_scene.character_name}
+                    </p>
+                  </div>
+                  <span className="ml-auto text-emerald-300 text-sm font-semibold group-hover:translate-x-0.5 transition-transform">Resume →</span>
+                </Link>
+              )}
+              {continueState?.active_party && (
+                <Link
+                  to={`/parties/${continueState.active_party.id}`}
+                  data-testid="continue-party-link"
+                  className="flex items-center gap-4 p-4 rounded-xl border border-purple-400/30 bg-purple-500/10 hover:border-purple-400/70 transition-all group"
+                >
+                  <div className="w-11 h-11 rounded-lg bg-purple-800/40 flex items-center justify-center shrink-0">
+                    <Users className="w-6 h-6 text-purple-300" />
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-xs uppercase tracking-wide text-purple-400/80">Active Party</p>
+                    <p className="text-white font-semibold truncate">{continueState.active_party.name}</p>
+                    <p className="text-xs text-gray-400 truncate capitalize">
+                      {continueState.active_party.status} • {continueState.active_party.member_count} member{continueState.active_party.member_count === 1 ? '' : 's'}
+                    </p>
+                  </div>
+                  <span className="ml-auto text-purple-300 text-sm font-semibold group-hover:translate-x-0.5 transition-transform">Open →</span>
+                </Link>
+              )}
+            </div>
+          </div>
+        )}
 
         {/* Stats Grid */}
         <div className="grid md:grid-cols-3 gap-6 mb-8">

@@ -8,6 +8,12 @@ A fantasy-world exploration / roleplay site set in the "Continents of Delarom" u
 - **Admins / Moderators**: manage applications, users, IP bans, locations, NPCs, scene events, diplomacy and world events.
 
 ## Implemented Features (latest first)
+- **"Continue Where You Left Off" dashboard card — web + mobile (2026-08-22) ✅** — A dashboard card that jumps the player straight back into their **last RP scene** and their **active party**. Deliberately excludes accepted quests (per spec).
+  - **Backend:** `GET /api/me/continue` → `{last_scene:{nation,location,location_name,city,character_name,at}|null, active_party:{id,name,status,location,member_count}|null}`. last_scene = most recent `location_rp` doc for the user (joined to `locations` for name/city); active_party = most recent `parties` doc where `members.user_id==user` and status in [recruiting, active].
+  - **Web:** Dashboard "Continue Where You Left Off" card (`data-testid=continue-card`) — a Resume row (`continue-rp-link` → `/roleplay/<nation>/<location>`) and a party row (`continue-party-link` → `/parties/<id>`). Hidden entirely when neither exists.
+  - **Mobile:** Dashboard "Continue" card (`testID=dashboard-continue-card`) with rows `dashboard-continue-rp` (→ `/rp?nation&location&name`) and `dashboard-continue-party` (→ `/(tabs)/realm/party?id`). `Card` component gained an optional `testID` prop.
+  - **Verified:** `iteration_33` — backend 6/6 pytest (populated + null empty-state + auth), web card render + party navigation + empty-state hidden, mobile card render + navigation + empty-state hidden. No parity issues.
+
 - **Global Character Switcher — persisted across web + mobile (2026-08-22) ✅** — Players now pick "who they're playing" once and it applies everywhere on both surfaces. Choice is persisted server-side on the user (`active_character_id`), so web and mobile share it.
   - **Backend:** `active_character_id` on User/UserResponse; `GET /api/characters/active` + `PUT /api/characters/active` (ownership-validated; the static `/active` route is registered BEFORE `/characters/{id}` so it isn't shadowed); `resolve_active_character(user)` helper replaces the old `characters[0]` default in Location RP + scene-state so switching heroes changes who you control.
   - **Web:** `contexts/CharacterContext.js` (roster + active hero, `switchCharacter`), provider wired in `App.js`; a "Playing As" switcher card on the Dashboard (`data-testid=character-switcher`, `switch-character-<id>`, `active-character-name`) with a "Now playing as X" toast.

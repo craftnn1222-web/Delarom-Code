@@ -144,6 +144,32 @@ export const CharacterApi = {
     api.postForm<{ portrait_url: string }>(`/characters/${id}/upload-image`, form),
 };
 
+export interface ContinueLastScene {
+  nation: string;
+  location: string;
+  location_name: string;
+  city: string;
+  character_name: string;
+  at: string;
+}
+
+export interface ContinueActiveParty {
+  id: string;
+  name: string;
+  status: string;
+  location: string;
+  member_count: number;
+}
+
+export interface ContinueState {
+  last_scene: ContinueLastScene | null;
+  active_party: ContinueActiveParty | null;
+}
+
+export const MeApi = {
+  continueState: () => api.get<ContinueState>("/me/continue"),
+};
+
 export const WorldApi = {
   nations: () => api.get<Nation[]>("/nations/images"),
   cities: (nation: string) => api.get<City[]>(`/cities/${nation}`),

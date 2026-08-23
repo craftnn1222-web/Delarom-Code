@@ -2299,6 +2299,46 @@ async def submit_location_rp(
     return response_payload
 
 
+@api_router.get("/me/continue")
+async def get_continue_state(current_user: User = Depends(get_current_user)):
+    """Dashboard 'continue where you left off' — the player's most recent RP
+    scene and their active (recruiting/active) party. Deliberately excludes
+    accepted quests per the product spec."""
+    last_scene = None
+    rp = await db.location_rp.find_one(
+        {"user_id": current_user.id}, {"_id": 0}, sort=[("created_at", -1)]
+    )
+    if rp:
+        loc = await db.locations.find_one(
+            {"nation": rp["nation"], "slug": rp["location"]},
+            {"_id": 0, "name": 1, "city": 1},
+        )
+        last_scene = {
+            "nation": rp["nation"],
+            "location": rp["location"],
+            "location_name": (loc or {}).get("name") or rp["location"].replace("-", " ").title(),
+            "city": (loc or {}).get("city") or "",
+            "character_name": rp.get("character_name") or "",
+            "at": rp.get("created_at"),
+        }
+
+    active_party = None
+    party = await db.parties.find_one(
+        {"members.user_id": current_user.id, "status": {"$in": ["recruiting", "active"]}},
+        {"_id": 0}, sort=[("created_at", -1)],
+    )
+    if party:
+        active_party = {
+            "id": party["id"],
+            "name": party.get("name") or "Adventuring Party",
+            "status": party.get("status"),
+            "location": party.get("location") or "",
+            "member_count": len(party.get("members", [])),
+        }
+
+    return {"last_scene": last_scene, "active_party": active_party}
+
+
 # ==================== NPC MEMORY & SCENE STATE ROUTES ====================
 
 @api_router.get("/locations/{nation}/{location}/scene-state")
