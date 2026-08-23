@@ -1,0 +1,40 @@
+{
+  "summary": "Deployment-readiness SECURITY HARDENING regression pass — VERIFIED. All 8 previously-public bootstrap endpoints (POST /api/reset-and-seed, GET /api/populate-full/{nation}, GET /api/populate-locations/{nation}, GET /api/populate-all-nations, GET /api/initialize, GET /api/initialize/nations-images, GET /api/initialize/city-images/{nation_slug}, GET /api/initialize/location-images/{nation_slug}) now correctly return 401 for anonymous callers and 403 for authenticated non-admin callers. Handler bodies were NOT invoked with an admin token, per the safety note. Regression checks: public reads GET /api/db-status (200, counts intact), GET /api/factions (200, list) still work; standard auth flow works end-to-end (admin login -> /auth/me returns role=admin/status=active; non-admin login -> /auth/me returns role=member; anonymous /auth/me -> 401); admin-guard on non-destructive GET /api/admin/image-batch/status confirmed as 200 admin / 403 non-admin / 401 anonymous. 24/25 pytest cases PASS. The 1 failing case is unrelated to security hardening: /api/health is not defined in the backend (only /health at app-root, which is not reachable via the /api ingress). Image batch is intentionally paused per handoff note and was NOT resumed.",
+  "platforms_tested": ["web"],
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/health", "issue": "Not defined. server.py declares `@app.get(\"/health\")` at app-root (line 72), but the external ingress only routes `/api/*` to the backend, so /api/health -> 404 and /health -> 200 HTML from the frontend. The K8s liveness probe still works (internal), but there is no public /api/health JSON endpoint. Consider adding `@api_router.get(\"/health\")` so external callers (uptime monitors, health-check tests) can hit it."}
+    ]
+  },
+  "frontend_issues": {
+    "web": {"ui_bugs": [], "integration_issues": [], "design_issues": []},
+    "mobile": {"ui_bugs": [], "integration_issues": [], "design_issues": [], "react_native_issues": []}
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iter41_security_hardening.py",
+    "/app/test_reports/pytest/iter41_security.xml"
+  ],
+  "action_items": [
+    "(Optional / non-blocking for deploy) Add `@api_router.get(\"/health\")` in backend/server.py so an external /api/health JSON probe exists (currently only the internal /health app-root route is defined). Not a security issue, but the deployment-readiness checklist expected it.",
+    "Security hardening is READY for deployment — no further changes required for the 8 gated endpoints."
+  ],
+  "critical_code_review_comments": [
+    "server.py:106 `_admin_guard` correctly rejects both anon (401 via get_current_user) and non-admin (403). All 8 legacy handlers use `Depends(_admin_guard)` — verified.",
+    "server.py:116 POST /api/reset-and-seed correctly migrated from public GET to admin-gated POST. Anonymous POSTs are rejected at auth before touching db.nations.delete_many, so no data-loss vector remains for anon callers.",
+    "server.py:72 `/health` is defined on the FastAPI `app`, not on `api_router`. K8s liveness probe (in-cluster) still works, but external monitors hitting REACT_APP_BACKEND_URL/api/health will get 404. Minor consistency gap, easy fix: either add an alias on api_router or update the deployment health-check URL to /health (internal only).",
+    "server.py:1186 `COOKIE_SECURE` defaults to true; cookie auth continues to work via Bearer header fallback per test_credentials.md — verified in this run.",
+    "Non-admin token successfully hit /auth/me (test user is active). No lingering pending/suspended state on rep_tester_round2 — good."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter41_security_hardening.py"
+  ],
+  "success_rate": {"backend": "96% (24/25 — the 1 fail is a pre-existing /api/health gap unrelated to security hardening; all 24 hardening + auth + admin-guard regressions pass)", "frontend": "n/a (frontend testing skipped per request)"},
+  "test_credentials": "Admin craftnn1222@gmail.com / admin123; non-admin rep_tester_round2@delarom.com / Testpass123!",
+  "seed_data_creation": "None. Read-only auth + guard probes. No destructive handler was executed against admin token.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 41 = security-hardening regression before deploy. 8 legacy bootstrap endpoints are now admin-gated via `_admin_guard` (server.py:106). Reusable regression suite at /app/backend/tests/test_iter41_security_hardening.py — parametrised over the 8 endpoints for 401/403, plus admin-guard checks on /api/admin/image-batch/status and /api/auth/me. Do NOT invoke the mutating handlers with an admin token — they will reseed/populate world data. Image batch remains intentionally paused (admin stop, watchdog respects it); do not resume. Pre-existing gap: no /api/health JSON endpoint (only /health app-root). If deployment health-check config needs /api/health, main agent should add an api_router alias.",
+  "rca of the issue": "N/A for the security work — all guards verified. The single non-security failure (/api/health -> 404) is a routing scope mismatch: server.py:72 registers @app.get(\"/health\") on the FastAPI application, but the Kubernetes ingress only forwards paths beginning with /api to the backend, so external /api/health does not exist. Non-blocking for the security hardening deploy."
+}

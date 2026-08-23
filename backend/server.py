@@ -103,8 +103,18 @@ async def public_db_status():
     }
 
 
-@app.get("/api/reset-and-seed")
-async def reset_and_seed():
+async def _admin_guard(request: Request):
+    """Admin-only gate for the legacy setup endpoints below. They are defined
+    before the auth dependencies, so we resolve get_current_user lazily at
+    call time. Prevents unauthenticated reseed/populate/image-init calls."""
+    user = await get_current_user(request)
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return user
+
+
+@app.post("/api/reset-and-seed")
+async def reset_and_seed(_admin=Depends(_admin_guard)):
     """
     DANGER: Deletes all nations, cities, locations and re-seeds them.
     Use this if the data is corrupted or has wrong structure.
@@ -132,7 +142,7 @@ async def reset_and_seed():
 
 
 @app.get("/api/populate-full/{nation}")
-async def populate_full_nation(nation: str):
+async def populate_full_nation(nation: str, _admin=Depends(_admin_guard)):
     """
     Populate FULL data for a specific nation.
     This runs the populate script which adds all cities, towns, and locations.
@@ -200,7 +210,7 @@ async def populate_full_nation(nation: str):
 
 
 @app.get("/api/populate-locations/{nation}")
-async def populate_locations_for_nation(nation: str):
+async def populate_locations_for_nation(nation: str, _admin=Depends(_admin_guard)):
     """
     Populate locations for a specific nation.
     Call this after populating cities/towns.
@@ -248,7 +258,7 @@ async def populate_locations_for_nation(nation: str):
 
 
 @app.get("/api/populate-all-nations")
-async def populate_all_nations():
+async def populate_all_nations(_admin=Depends(_admin_guard)):
     """
     Populate ALL nations with full data. This may take a while.
     Runs each nation's populate script in sequence.
@@ -303,7 +313,7 @@ async def populate_all_nations():
 
 # Public initialization endpoint (for first-time setup)
 @app.get("/api/initialize")
-async def initialize_database():
+async def initialize_database(_admin=Depends(_admin_guard)):
     """
     Quick initialization - creates admin user and basic data WITHOUT images.
     Use /api/initialize/images after this to generate images.
@@ -342,7 +352,7 @@ async def initialize_database():
 
 
 @app.get("/api/initialize/nations-images")
-async def generate_nation_images():
+async def generate_nation_images(_admin=Depends(_admin_guard)):
     """Generate images for all nations (5 images, ~1-2 min)"""
     from seed_database import set_database, init_image_generator, generate_image, NATIONS_SEED
     set_database(db)
@@ -370,7 +380,7 @@ async def generate_nation_images():
 
 
 @app.get("/api/initialize/city-images/{nation_slug}")
-async def generate_city_images(nation_slug: str):
+async def generate_city_images(nation_slug: str, _admin=Depends(_admin_guard)):
     """Generate images for cities in a specific nation (call per nation)"""
     from seed_database import set_database, init_image_generator, generate_image
     set_database(db)
@@ -408,7 +418,7 @@ async def generate_city_images(nation_slug: str):
 
 
 @app.get("/api/initialize/location-images/{nation_slug}")
-async def generate_location_images(nation_slug: str, batch_size: int = 10):
+async def generate_location_images(nation_slug: str, batch_size: int = 10, _admin=Depends(_admin_guard)):
     """Generate images for locations in a specific nation (batch processing)"""
     from seed_database import set_database, init_image_generator, generate_image
     set_database(db)
