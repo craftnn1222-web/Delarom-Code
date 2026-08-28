@@ -3,36 +3,35 @@ for large files, and per-track delete.
 
 Registered from server.py via `attach_music_routes(...)`.
 
-Storage layout
---------------
-Files live at::
+Storage
+-------
+New uploads are streamed to **Emergent object storage** (the pod filesystem is
+ephemeral on deployed apps, so uploaded files must not live on disk). Each track
+keeps a small metadata document in the ``music_tracks`` Mongo collection::
 
-    MUSIC_DIR/
-        {theme}/
-            {track_id}__{safe-original-filename}
+    { id, theme, name, filename, size, mime, storage_path, created_at }
 
-    _chunks/                            (transient)
-        {upload_id}/
-            .meta.json                  {theme, filename, size, ...}
-            .part                       assembled bytes so far
+and is served back through ``GET /api/music/stream/{track_id}`` (with HTTP Range
+support so the player can seek).
 
-Legacy files that used to sit directly under MUSIC_DIR (``global.mp3``,
-``ammeonon.mp3``, ...) are still listed as a single-track playlist for
-that theme so nothing already uploaded is lost.
+Legacy files that shipped on disk under ``MUSIC_DIR`` (e.g. ``global.mp3``) are
+still listed and served read-only via the ``/api/static`` mount, so nothing
+already present is lost.
 """
 from __future__ import annotations
 
-import json
-import os
+import asyncio
 import re
-import shutil
 import time
 import uuid
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import List
+from typing import Dict, List
 
-from fastapi import APIRouter, Depends, File, Form, HTTPException, UploadFile
+from fastapi import APIRouter, Depends, File, Form, HTTPException, Request, Response, UploadFile
 from pydantic import BaseModel
+
+import object_storage
 
 
 AUDIO_EXTS = (".mp3", ".ogg", ".wav", ".m4a")
@@ -46,6 +45,23 @@ MAX_TRACK_BYTES = 200 * 1024 * 1024      # 200MB per assembled file
 MAX_UPLOADS_ACTIVE = 20                  # concurrent chunked upload sessions
 CHUNK_TTL_SECONDS = 60 * 60              # abandoned sessions scrubbed after 1h
 
+_AUDIO_MIME = {
+    ".mp3": "audio/mpeg",
+    ".ogg": "audio/ogg",
+    ".wav": "audio/wav",
+    ".m4a": "audio/mp4",
+}
+
+# In-memory assembly buffers for chunked uploads: {upload_id: {...}}. The pod
+# filesystem is ephemeral, so we never touch disk — bounded by MAX_TRACK_BYTES
+# per session and MAX_UPLOADS_ACTIVE concurrent sessions.
+_CHUNK_SESSIONS: Dict[str, dict] = {}
+
+# Tiny LRU-ish byte cache so repeated Range requests for the same track don't
+# re-fetch the whole object from storage every seek.
+_STREAM_CACHE: Dict[str, tuple] = {}      # {track_id: (bytes, mime)}
+_STREAM_CACHE_MAX = 4
+
 
 class FinalizePayload(BaseModel):
     upload_id: str
@@ -58,93 +74,74 @@ _SAFE_NAME_RE = re.compile(r"[^A-Za-z0-9._\- ]+")
 
 def _safe_filename(raw: str) -> str:
     """Strip unsafe characters and keep it short."""
+    import os
     base = os.path.basename(raw or "").strip() or "track"
     base = _SAFE_NAME_RE.sub("_", base)
     return base[:120]
 
 
-def _theme_dir(music_dir: Path, theme: str) -> Path:
-    p = music_dir / theme
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
-def _chunks_dir(music_dir: Path) -> Path:
-    p = music_dir / "_chunks"
-    p.mkdir(parents=True, exist_ok=True)
-    return p
+def _mime_for(filename: str) -> str:
+    return _AUDIO_MIME.get(Path(filename).suffix.lower(), "audio/mpeg")
 
 
-def _reap_stale_chunks(music_dir: Path) -> None:
-    root = _chunks_dir(music_dir)
-    now = time.time()
-    for d in list(root.iterdir()):
-        try:
-            if not d.is_dir():
-                continue
-            meta = d / ".meta.json"
-            if not meta.exists() or (now - meta.stat().st_mtime) > CHUNK_TTL_SECONDS:
-                shutil.rmtree(d, ignore_errors=True)
-        except OSError:
-            pass
-
-
-def _write_upload_to_theme(
-    *, music_dir: Path, theme: str, upload: UploadFile,
-) -> dict:
-    """Stream an UploadFile to disk under the theme's directory."""
-    if not upload.filename:
-        raise HTTPException(status_code=400, detail="File has no name.")
-    ext = Path(upload.filename).suffix.lower()
+def _validate_theme_ext(theme: str, filename: str) -> str:
+    ext = Path(filename or "").suffix.lower()
     if ext not in AUDIO_EXTS:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Only audio files allowed ({', '.join(AUDIO_EXTS)}).",
-        )
+        raise HTTPException(status_code=400, detail=f"Only audio files allowed ({', '.join(AUDIO_EXTS)}).")
     if theme not in VALID_THEMES:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid theme. Must be one of: {', '.join(VALID_THEMES)}",
-        )
+        raise HTTPException(status_code=400, detail=f"Invalid theme. Must be one of: {', '.join(VALID_THEMES)}")
+    return ext
 
+
+def _reap_stale_sessions() -> None:
+    now = time.time()
+    for uid in list(_CHUNK_SESSIONS.keys()):
+        sess = _CHUNK_SESSIONS.get(uid)
+        if not sess or (now - sess.get("created_at", now)) > CHUNK_TTL_SECONDS:
+            _CHUNK_SESSIONS.pop(uid, None)
+
+
+async def _store_track(db, *, theme: str, filename: str, data: bytes) -> dict:
+    """Persist raw bytes to object storage + a metadata doc in Mongo."""
+    ext = _validate_theme_ext(theme, filename)
+    if len(data) > MAX_TRACK_BYTES:
+        raise HTTPException(status_code=413, detail=f"File too large — max {MAX_TRACK_BYTES // (1024*1024)}MB per track.")
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file.")
     tid = uuid.uuid4().hex[:8]
-    safe = _safe_filename(upload.filename)
-    final = _theme_dir(music_dir, theme) / f"{tid}__{safe}"
-
-    written = 0
-    try:
-        with open(final, "wb") as fp:
-            while True:
-                chunk = upload.file.read(1024 * 1024)
-                if not chunk:
-                    break
-                written += len(chunk)
-                if written > MAX_TRACK_BYTES:
-                    fp.close()
-                    final.unlink(missing_ok=True)
-                    raise HTTPException(
-                        status_code=413,
-                        detail=f"File too large — max {MAX_TRACK_BYTES // (1024*1024)}MB per track.",
-                    )
-                fp.write(chunk)
-    except HTTPException:
-        raise
-    except Exception as e:
-        final.unlink(missing_ok=True)
-        raise HTTPException(status_code=500, detail=f"Failed to save file: {e}") from e
-
+    safe = _safe_filename(filename)
+    mime = _AUDIO_MIME.get(ext, "audio/mpeg")
+    stored_name = f"{tid}__{safe}"
+    path = f"{object_storage.APP_NAME}/music/{tid}{ext}"
+    result = await asyncio.to_thread(object_storage.put_object, path, data, mime)
+    doc = {
+        "id": tid,
+        "theme": theme,
+        "name": safe,
+        "filename": stored_name,
+        "size": result.get("size", len(data)),
+        "mime": mime,
+        "storage_path": result["path"],
+        "created_at": _now_iso(),
+    }
+    await db.music_tracks.insert_one(dict(doc))
+    doc.pop("_id", None)
     return {
         "id": tid,
         "theme": theme,
-        "filename": final.name,
+        "filename": stored_name,
         "name": safe,
-        "size": written,
-        "url": f"/api/static/music/{theme}/{final.name}",
+        "size": doc["size"],
+        "url": f"/api/music/stream/{tid}",
     }
 
 
-def _scan_theme(music_dir: Path, theme: str) -> List[dict]:
-    """Return tracks for a theme, including legacy top-level files."""
+def _scan_legacy_disk(music_dir: Path, theme: str) -> List[dict]:
+    """Read-only listing of legacy on-disk files for a theme (no writes)."""
     tracks: List[dict] = []
     tdir = music_dir / theme
     if tdir.exists() and tdir.is_dir():
@@ -161,7 +158,6 @@ def _scan_theme(music_dir: Path, theme: str) -> List[dict]:
                 "size": f.stat().st_size,
                 "url": f"/api/static/music/{theme}/{f.name}",
             })
-    # Legacy: MUSIC_DIR/{theme}.mp3 etc.
     for ext in AUDIO_EXTS:
         legacy = music_dir / f"{theme}{ext}"
         if legacy.exists() and legacy.is_file():
@@ -183,22 +179,84 @@ def attach_music_routes(
     User,
     get_current_user,
     MUSIC_DIR: Path,
+    db,
 ):
+    def _require_admin(current_user) -> None:
+        if getattr(current_user, "role", "") != "admin":
+            raise HTTPException(status_code=403, detail="Admin access required.")
+
     # ─────────────────────────────────────────── LIST ────────────
 
     @api_router.get("/music/list")
     async def list_music():
         """All tracks grouped by theme + a flat array, plus a legacy list."""
-        by_theme: dict = {t: _scan_theme(MUSIC_DIR, t) for t in VALID_THEMES}
+        by_theme: dict = {}
+        for theme in VALID_THEMES:
+            rows = _scan_legacy_disk(MUSIC_DIR, theme)
+            uploaded = await db.music_tracks.find({"theme": theme}, {"_id": 0}).sort("created_at", 1).to_list(500)
+            for u in uploaded:
+                rows.append({
+                    "id": u["id"],
+                    "theme": theme,
+                    "filename": u.get("filename"),
+                    "name": u.get("name") or u.get("filename"),
+                    "size": u.get("size", 0),
+                    "url": f"/api/music/stream/{u['id']}",
+                })
+            by_theme[theme] = rows
         flat: List[dict] = []
         for _, rows in by_theme.items():
             flat.extend(rows)
-        # Back-compat: only legacy top-level files were ever in this array.
         legacy_flat = [
             {"theme": r["theme"], "filename": r["filename"], "url": r["url"]}
             for r in flat if r.get("legacy")
         ]
         return {"themes": by_theme, "all": flat, "tracks": legacy_flat}
+
+    # ─────────────────────────────────────────── STREAM ──────────
+
+    @api_router.api_route("/music/stream/{track_id}", methods=["GET", "HEAD"])
+    async def stream_music(track_id: str, request: Request):
+        """Serve an uploaded track from object storage, with HTTP Range support."""
+        cached = _STREAM_CACHE.get(track_id)
+        if cached:
+            data, mime = cached
+        else:
+            doc = await db.music_tracks.find_one({"id": track_id}, {"_id": 0})
+            if not doc or not doc.get("storage_path"):
+                raise HTTPException(status_code=404, detail="Track not found")
+            data, ctype = await asyncio.to_thread(object_storage.get_object, doc["storage_path"])
+            mime = doc.get("mime") or ctype or "audio/mpeg"
+            if len(_STREAM_CACHE) >= _STREAM_CACHE_MAX:
+                _STREAM_CACHE.pop(next(iter(_STREAM_CACHE)))
+            _STREAM_CACHE[track_id] = (data, mime)
+
+        total = len(data)
+        base_headers = {
+            "Accept-Ranges": "bytes",
+            "Cache-Control": "public, max-age=86400",
+        }
+        range_header = request.headers.get("range")
+        if range_header:
+            m = re.match(r"bytes=(\d*)-(\d*)", range_header)
+            if m:
+                start = int(m.group(1)) if m.group(1) else 0
+                end = int(m.group(2)) if m.group(2) else total - 1
+                start = max(0, start)
+                end = min(end, total - 1)
+                if start > end:
+                    return Response(status_code=416, headers={"Content-Range": f"bytes */{total}"})
+                body = b"" if request.method == "HEAD" else data[start:end + 1]
+                headers = {
+                    **base_headers,
+                    "Content-Range": f"bytes {start}-{end}/{total}",
+                    "Content-Length": str(end - start + 1),
+                }
+                return Response(content=body, status_code=206, media_type=mime, headers=headers)
+
+        body = b"" if request.method == "HEAD" else data
+        headers = {**base_headers, "Content-Length": str(total)}
+        return Response(content=body, media_type=mime, headers=headers)
 
     # ─────────────────────────────────────────── UPLOAD ──────────
 
@@ -209,11 +267,9 @@ def attach_music_routes(
         current_user: User = Depends(get_current_user),
     ):
         """Upload a single audio file (small ≤ ~4MB via direct POST)."""
-        if getattr(current_user, "role", "") != "admin":
-            raise HTTPException(status_code=403, detail="Admin access required.")
-        rec = _write_upload_to_theme(
-            music_dir=MUSIC_DIR, theme=theme, upload=file,
-        )
+        _require_admin(current_user)
+        data = await file.read()
+        rec = await _store_track(db, theme=theme, filename=file.filename or "track", data=data)
         return {"success": True, **rec, "message": f"Uploaded {rec['name']} to {theme}."}
 
     @api_router.post("/admin/music/upload-many")
@@ -223,15 +279,13 @@ def attach_music_routes(
         current_user: User = Depends(get_current_user),
     ):
         """Upload several audio files at once (folder-drop, small files)."""
-        if getattr(current_user, "role", "") != "admin":
-            raise HTTPException(status_code=403, detail="Admin access required.")
+        _require_admin(current_user)
         added: List[dict] = []
         skipped: List[dict] = []
         for f in files:
             try:
-                added.append(_write_upload_to_theme(
-                    music_dir=MUSIC_DIR, theme=theme, upload=f,
-                ))
+                data = await f.read()
+                added.append(await _store_track(db, theme=theme, filename=f.filename or "track", data=data))
             except HTTPException as he:
                 skipped.append({"filename": f.filename, "reason": he.detail})
         return {
@@ -252,35 +306,20 @@ def attach_music_routes(
         current_user: User = Depends(get_current_user),
     ):
         """Begin a chunked upload session. Returns `upload_id`."""
-        if getattr(current_user, "role", "") != "admin":
-            raise HTTPException(status_code=403, detail="Admin access required.")
-        if theme not in VALID_THEMES:
-            raise HTTPException(status_code=400, detail=f"Invalid theme. Must be one of: {', '.join(VALID_THEMES)}")
-        ext = Path(filename).suffix.lower()
-        if ext not in AUDIO_EXTS:
-            raise HTTPException(status_code=400, detail=f"Only audio files allowed ({', '.join(AUDIO_EXTS)}).")
+        _require_admin(current_user)
+        _validate_theme_ext(theme, filename)
         if size and size > MAX_TRACK_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File too large — max {MAX_TRACK_BYTES // (1024*1024)}MB per track.",
-            )
-        _reap_stale_chunks(MUSIC_DIR)
-        root = _chunks_dir(MUSIC_DIR)
-        active = sum(1 for _ in root.iterdir() if _.is_dir())
-        if active >= MAX_UPLOADS_ACTIVE:
+            raise HTTPException(status_code=413, detail=f"File too large — max {MAX_TRACK_BYTES // (1024*1024)}MB per track.")
+        _reap_stale_sessions()
+        if len(_CHUNK_SESSIONS) >= MAX_UPLOADS_ACTIVE:
             raise HTTPException(status_code=429, detail="Too many active uploads. Try again shortly.")
-
         upload_id = uuid.uuid4().hex
-        d = root / upload_id
-        d.mkdir(parents=True, exist_ok=True)
-        meta = {
+        _CHUNK_SESSIONS[upload_id] = {
             "theme": theme,
             "filename": _safe_filename(filename),
-            "size_hint": int(size or 0),
+            "buf": bytearray(),
             "created_at": time.time(),
         }
-        (d / ".meta.json").write_text(json.dumps(meta))
-        (d / ".part").touch()
         return {"upload_id": upload_id, "chunk_limit": CHUNK_LIMIT_BYTES}
 
     @api_router.post("/admin/music/chunk/append")
@@ -290,29 +329,18 @@ def attach_music_routes(
         current_user: User = Depends(get_current_user),
     ):
         """Append the next chunk of bytes to an existing upload session."""
-        if getattr(current_user, "role", "") != "admin":
-            raise HTTPException(status_code=403, detail="Admin access required.")
-        d = _chunks_dir(MUSIC_DIR) / upload_id
-        meta_path = d / ".meta.json"
-        part_path = d / ".part"
-        if not meta_path.exists() or not part_path.exists():
+        _require_admin(current_user)
+        sess = _CHUNK_SESSIONS.get(upload_id)
+        if not sess:
             raise HTTPException(status_code=404, detail="Upload session not found (may have expired).")
-
-        current_size = part_path.stat().st_size
         buf = await chunk.read()
         if len(buf) > CHUNK_LIMIT_BYTES + 1024:
-            raise HTTPException(
-                status_code=413,
-                detail=f"Chunk too large — keep chunks ≤ {CHUNK_LIMIT_BYTES // (1024*1024)}MB.",
-            )
-        if current_size + len(buf) > MAX_TRACK_BYTES:
-            raise HTTPException(
-                status_code=413,
-                detail=f"File exceeds the {MAX_TRACK_BYTES // (1024*1024)}MB limit.",
-            )
-        with open(part_path, "ab") as fp:
-            fp.write(buf)
-        return {"received": len(buf), "total": current_size + len(buf)}
+            raise HTTPException(status_code=413, detail=f"Chunk too large — keep chunks ≤ {CHUNK_LIMIT_BYTES // (1024*1024)}MB.")
+        if len(sess["buf"]) + len(buf) > MAX_TRACK_BYTES:
+            _CHUNK_SESSIONS.pop(upload_id, None)
+            raise HTTPException(status_code=413, detail=f"File exceeds the {MAX_TRACK_BYTES // (1024*1024)}MB limit.")
+        sess["buf"].extend(buf)
+        return {"received": len(buf), "total": len(sess["buf"])}
 
     @api_router.post("/admin/music/chunk/finalize")
     async def chunk_finalize(
@@ -320,36 +348,22 @@ def attach_music_routes(
         current_user: User = Depends(get_current_user),
     ):
         """Assemble a chunked upload into its final playlist slot."""
-        if getattr(current_user, "role", "") != "admin":
-            raise HTTPException(status_code=403, detail="Admin access required.")
-        if payload.theme not in VALID_THEMES:
-            raise HTTPException(status_code=400, detail=f"Invalid theme. Must be one of: {', '.join(VALID_THEMES)}")
-        ext = Path(payload.filename).suffix.lower()
-        if ext not in AUDIO_EXTS:
-            raise HTTPException(status_code=400, detail=f"Only audio files allowed ({', '.join(AUDIO_EXTS)}).")
-
-        d = _chunks_dir(MUSIC_DIR) / payload.upload_id
-        part = d / ".part"
-        if not part.exists():
+        _require_admin(current_user)
+        sess = _CHUNK_SESSIONS.get(payload.upload_id)
+        if not sess:
             raise HTTPException(status_code=404, detail="Upload session not found.")
-        if part.stat().st_size == 0:
-            shutil.rmtree(d, ignore_errors=True)
+        data = bytes(sess["buf"])
+        if not data:
+            _CHUNK_SESSIONS.pop(payload.upload_id, None)
             raise HTTPException(status_code=400, detail="No bytes uploaded for this session.")
-
-        tid = uuid.uuid4().hex[:8]
-        safe = _safe_filename(payload.filename)
-        final = _theme_dir(MUSIC_DIR, payload.theme) / f"{tid}__{safe}"
-        shutil.move(str(part), str(final))
-        shutil.rmtree(d, ignore_errors=True)
+        try:
+            rec = await _store_track(db, theme=payload.theme, filename=payload.filename, data=data)
+        finally:
+            _CHUNK_SESSIONS.pop(payload.upload_id, None)
         return {
             "success": True,
-            "id": tid,
-            "theme": payload.theme,
-            "filename": final.name,
-            "name": safe,
-            "size": final.stat().st_size,
-            "url": f"/api/static/music/{payload.theme}/{final.name}",
-            "message": f"Uploaded {safe} to {payload.theme}.",
+            **rec,
+            "message": f"Uploaded {rec['name']} to {payload.theme}.",
         }
 
     @api_router.post("/admin/music/chunk/abort")
@@ -358,11 +372,8 @@ def attach_music_routes(
         current_user: User = Depends(get_current_user),
     ):
         """Discard a chunked upload session."""
-        if getattr(current_user, "role", "") != "admin":
-            raise HTTPException(status_code=403, detail="Admin access required.")
-        d = _chunks_dir(MUSIC_DIR) / upload_id
-        if d.exists():
-            shutil.rmtree(d, ignore_errors=True)
+        _require_admin(current_user)
+        _CHUNK_SESSIONS.pop(upload_id, None)
         return {"aborted": True}
 
     # ─────────────────────────────────────────── DELETE ──────────
@@ -372,12 +383,22 @@ def attach_music_routes(
         theme: str,
         current_user: User = Depends(get_current_user),
     ):
-        """Wipe all tracks for a theme."""
-        if getattr(current_user, "role", "") != "admin":
-            raise HTTPException(status_code=403, detail="Admin access required.")
+        """Wipe all tracks for a theme (uploaded + legacy disk)."""
+        _require_admin(current_user)
         if theme not in VALID_THEMES:
             raise HTTPException(status_code=400, detail=f"Invalid theme. Must be one of: {', '.join(VALID_THEMES)}")
-        removed = 0
+        # Uploaded tracks in object storage + Mongo
+        uploaded = await db.music_tracks.find({"theme": theme}, {"_id": 0, "storage_path": 1, "id": 1}).to_list(500)
+        for u in uploaded:
+            if u.get("storage_path"):
+                try:
+                    await asyncio.to_thread(object_storage.delete_object, u["storage_path"])
+                except Exception:
+                    pass
+            _STREAM_CACHE.pop(u.get("id"), None)
+        res = await db.music_tracks.delete_many({"theme": theme})
+        removed = res.deleted_count
+        # Legacy disk files (read+unlink; not an upload write)
         tdir = MUSIC_DIR / theme
         if tdir.exists() and tdir.is_dir():
             for f in list(tdir.iterdir()):
@@ -397,21 +418,32 @@ def attach_music_routes(
         filename: str,
         current_user: User = Depends(get_current_user),
     ):
-        """Delete a single track file from a theme."""
-        if getattr(current_user, "role", "") != "admin":
-            raise HTTPException(status_code=403, detail="Admin access required.")
+        """Delete a single track from a theme (uploaded or legacy disk)."""
+        _require_admin(current_user)
         if theme not in VALID_THEMES:
             raise HTTPException(status_code=400, detail=f"Invalid theme. Must be one of: {', '.join(VALID_THEMES)}")
         safe = _safe_filename(filename)
+        # Uploaded track match (by stored filename)
+        doc = await db.music_tracks.find_one({"theme": theme, "filename": safe}, {"_id": 0})
+        if not doc:
+            doc = await db.music_tracks.find_one({"theme": theme, "filename": filename}, {"_id": 0})
+        if doc:
+            if doc.get("storage_path"):
+                try:
+                    await asyncio.to_thread(object_storage.delete_object, doc["storage_path"])
+                except Exception:
+                    pass
+            _STREAM_CACHE.pop(doc.get("id"), None)
+            await db.music_tracks.delete_one({"id": doc["id"]})
+            return {"deleted": True, "theme": theme, "filename": doc.get("filename")}
+        # Legacy disk file (read+unlink)
         theme_root = (MUSIC_DIR / theme).resolve()
         candidate = (MUSIC_DIR / theme / safe).resolve()
-        # Guard: no directory-escape
         if candidate.parent != theme_root:
             raise HTTPException(status_code=400, detail="Illegal filename.")
         if candidate.exists() and candidate.is_file():
             candidate.unlink()
             return {"deleted": True, "theme": theme, "filename": safe}
-        # Legacy top-level file (e.g., global.mp3)
         legacy = (MUSIC_DIR / safe).resolve()
         if legacy.parent == MUSIC_DIR.resolve() and legacy.exists() and legacy.is_file():
             legacy.unlink()

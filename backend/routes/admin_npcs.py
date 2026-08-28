@@ -192,6 +192,15 @@ def attach_admin_npc_routes(
         ).limit(limit)
         return await cursor.to_list(length=limit)
 
+    @api_router.post("/admin/npcs/{npc_id}/reset-memory")
+    async def admin_reset_npc_memory(npc_id: str, admin: User = Depends(require_admin)):
+        npc_service = NPCMemoryService(db)
+        npc = await npc_service.get_npc(npc_id)
+        if not npc:
+            raise HTTPException(status_code=404, detail="NPC not found")
+        await npc_service.reset_npc_memories(npc_id)
+        return {"reset": True}
+
     @api_router.post("/admin/npcs/{nation}/{location}")
     async def admin_create_npc(
         nation: str,
@@ -227,15 +236,6 @@ def attach_admin_npc_routes(
         if not ok:
             raise HTTPException(status_code=404, detail="NPC not found")
         return {"deleted": True}
-
-    @api_router.post("/admin/npcs/{npc_id}/reset-memory")
-    async def admin_reset_npc_memory(npc_id: str, admin: User = Depends(require_admin)):
-        npc_service = NPCMemoryService(db)
-        npc = await npc_service.get_npc(npc_id)
-        if not npc:
-            raise HTTPException(status_code=404, detail="NPC not found")
-        await npc_service.reset_npc_memories(npc_id)
-        return {"reset": True}
 
     @api_router.get("/admin/npcs/{npc_id}/relationships")
     async def admin_list_relationships(npc_id: str, admin: User = Depends(require_admin)):

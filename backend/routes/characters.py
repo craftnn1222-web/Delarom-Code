@@ -6,9 +6,10 @@ keyword args; route bodies close over them.
 """
 from typing import List
 from datetime import datetime
-import base64
 from fastapi import APIRouter, Depends, HTTPException, UploadFile, File
 from pydantic import BaseModel
+
+from image_service import ImageService
 
 
 class ActiveCharacterRequest(BaseModel):
@@ -107,17 +108,20 @@ def attach_character_routes(
         if len(contents) > 5 * 1024 * 1024:
             raise HTTPException(status_code=400, detail="Image too large (max 5MB)")
     
-        # Convert to base64 for easy storage and display
-        image_base64 = base64.b64encode(contents).decode('utf-8')
-        image_data_url = f"data:{file.content_type};base64,{image_base64}"
+        # Persist bytes to object storage and reference by a short URL. Storing
+        # multi-MB base64 data URIs directly on the character bloated every list
+        # endpoint that returns portraits (e.g. the member directory).
+        img_service = ImageService(db)
+        image_id = await img_service.store_bytes(contents, mime_type=file.content_type)
+        portrait_url = f"/api/image/{image_id}"
     
         # Update character with custom image
         await db.characters.update_one(
             {"id": character_id},
-            {"$set": {"portrait_url": image_data_url, "custom_image": True}}
+            {"$set": {"portrait_url": portrait_url, "image_id": image_id, "custom_image": True}}
         )
     
-        return {"message": "Image uploaded successfully", "portrait_url": image_data_url}
+        return {"message": "Image uploaded successfully", "portrait_url": portrait_url}
 
 
     @api_router.put("/characters/{character_id}", response_model=Character)

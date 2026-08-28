@@ -1535,9 +1535,25 @@ async def get_members_directory():
     for u in users:
         u["characters"] = []
 
+    img_service = ImageService(db)
     for char in characters:
         uid = char.get("user_id")
         if uid in user_map:
+            # Defensive: never ship multi-MB base64 data URIs in this list. A
+            # legacy inline portrait is migrated to object storage on first sight
+            # and rewritten to a short /api/image/{id} URL, so the payload stays
+            # tiny even on the first request after a deploy.
+            portrait = char.get("portrait_url")
+            if isinstance(portrait, str) and portrait.startswith("data:"):
+                image_id = await img_service.store_from_data_url(portrait)
+                if image_id:
+                    portrait = f"/api/image/{image_id}"
+                    await db.characters.update_one(
+                        {"id": char.get("id")},
+                        {"$set": {"portrait_url": portrait, "image_id": image_id}},
+                    )
+                else:
+                    portrait = None
             # Keep only fields useful for the directory
             char_slim = {
                 "id": char.get("id"),
@@ -1547,7 +1563,7 @@ async def get_members_directory():
                 "character_class": char.get("character_class"),
                 "backstory": char.get("backstory"),
                 "appearance": char.get("appearance"),
-                "portrait_url": char.get("portrait_url"),
+                "portrait_url": portrait,
             }
             user_map[uid].setdefault("characters", []).append(char_slim)
 
@@ -2948,7 +2964,7 @@ async def root():
 # ==================== MUSIC UPLOAD ====================
 # Extracted to routes/music.py (2026-05-30 refactor).
 from routes.music import attach_music_routes
-attach_music_routes(api_router, User=User, get_current_user=get_current_user, MUSIC_DIR=MUSIC_DIR)
+attach_music_routes(api_router, User=User, get_current_user=get_current_user, MUSIC_DIR=MUSIC_DIR, db=db)
 
 
 

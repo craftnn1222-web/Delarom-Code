@@ -1,0 +1,38 @@
+{
+  "summary": "Iteration 42 production bug fix verified. Members Directory payload is now 36109 bytes (measured) versus the reported 2.6 MB before, well under the 200 KB ceiling. No character portrait_url in the /api/public/members-directory response starts with 'data:' — all are null or short '/api/image/{id}' URLs which serve 200 with image/* content-type. Owner upload to POST /api/characters/{id}/upload-image returns portrait_url starting with '/api/image/', that URL serves an image, and the character document is persisted with the short URL (no base64). Non-owner upload is rejected with 404, anonymous with 401 as expected. AuthContext resilience verified via web UI: after visiting /members, the localStorage token persists and navigating to /dashboard does NOT redirect to /login (no spurious logout). Admin and non-admin /api/auth/login + /api/auth/me regression still passes. 7/7 pytest cases green.",
+  "platforms_tested": ["web"],
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "web": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": []
+    },
+    "mobile": {
+      "ui_bugs": [],
+      "integration_issues": [],
+      "design_issues": [],
+      "react_native_issues": []
+    }
+  },
+  "parity_issues": [],
+  "test_report_links": [
+    "/app/backend/tests/test_iter42_members_directory_shrink.py",
+    "/app/test_reports/pytest/iter42_directory_shrink.xml"
+  ],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "server.py exceeds 3000 lines; consider extracting the public/members-directory + /image/{id} endpoints into a dedicated module (routes/public.py). Not blocking, but the file is well past the 700-line guideline.",
+    "The defensive base64→object-storage migration inside get_members_directory runs synchronously in the request path per legacy portrait; today it's a no-op because the DB is already migrated (payload = 36 KB), but if a legacy user ever re-imports a data-URI portrait via update_character (PUT /api/characters/{id}), it would slip through and get migrated on next directory hit. Consider also gating update_character to convert data: URIs at write time so no request path pays that cost."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_iter42_members_directory_shrink.py (new)"
+  ],
+  "success_rate": { "backend": "100%", "frontend": "100%" },
+  "test_credentials": "Admin craftnn1222@gmail.com / admin123; non-admin rep_tester_round2@delarom.com / Testpass123!",
+  "seed_data_creation": "Test uploaded a valid 1x1 PNG to admin's own character (a35a8ce2-71db-467c-8ad0-451fe9433a87 'Ausar Veltraus'); its portrait_url is now /api/image/<uuid> pointing to object storage. This replaces the previous portrait as expected by the review request. No other seed data added.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Iteration 42 bug fix (members-directory payload shrink + AuthContext resilience + upload-image → object storage) is fully verified backend+frontend. If further changes are made, rerun /app/backend/tests/test_iter42_members_directory_shrink.py which covers: payload size cap, no data: URIs in the response, /api/image/* URLs serve image bytes, owner/non-owner/anonymous upload behavior, and auth regression.",
+  "rca of the issue": "Original prod bug: /api/public/members-directory shipped multi-MB base64 portrait_urls inline (measured 2.6 MB; 2.5 MB from a single portrait). Single-worker FastAPI behind the CDN saturated, requests to /members timed out or 5xx'd, and the frontend AuthContext previously wiped localStorage token on ANY error from GET /api/auth/me — so the user got silently logged out and the subsequent re-login race with the proxy showed a Cloudflare page. Fix has three prongs: (1) uploads now go to object storage via ImageService.store_bytes and store only a short /api/image/{id} URL on the character, (2) the members-directory route defensively migrates any lingering data: URI it encounters and rewrites the character doc, so payload stays ~36 KB, (3) AuthContext only clears the token on 401/403 — network/timeout/5xx keep the session intact. All three verified."
+}

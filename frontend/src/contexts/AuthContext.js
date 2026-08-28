@@ -37,10 +37,18 @@ export const AuthProvider = ({ children }) => {
     try {
       const response = await getMe();
       setCurrentUser(response.data);
-    } catch (_e) {
-      // 401 / 403 — token expired or invalid. Clear local copy.
-      setAuthToken(null);
-      setCurrentUser(null);
+    } catch (err) {
+      const status = err?.response?.status;
+      if (status === 401 || status === 403) {
+        // Token genuinely expired/invalid — clear the local copy.
+        setAuthToken(null);
+        setCurrentUser(null);
+      } else {
+        // Network error / timeout / 5xx (e.g. backend momentarily overloaded).
+        // Do NOT wipe the token — that would spuriously log the user out. Keep
+        // it so the next request or a refresh recovers the session.
+        setCurrentUser(null);
+      }
     } finally {
       setLoading(false);
     }

@@ -80,3 +80,16 @@ def get_object(path: str) -> tuple[bytes, str]:
         resp = requests.get(url, headers={"X-Storage-Key": key}, timeout=60)
     resp.raise_for_status()
     return resp.content, resp.headers.get("Content-Type", "application/octet-stream")
+
+
+def delete_object(path: str) -> None:
+    """Best-effort delete of a stored object. Retries once on a dead key."""
+    key = init_storage()
+    url = f"{_storage_url()}/objects/{path}"
+    resp = requests.delete(url, headers={"X-Storage-Key": key}, timeout=30)
+    if resp.status_code in (403, 404):
+        key = init_storage(force=True)
+        resp = requests.delete(url, headers={"X-Storage-Key": key}, timeout=30)
+    # Treat a missing object as already-deleted.
+    if resp.status_code not in (404,):
+        resp.raise_for_status()
