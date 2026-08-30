@@ -84,31 +84,30 @@ const LandingPage = () => {
       )}
 
       <div className="relative z-10">
-        {/* Hero Section */}
-        <div className="container mx-auto px-4 py-20">
-          <div className="text-center max-w-4xl mx-auto">
-            <h1 className="text-7xl font-bold mb-6 text-transparent bg-clip-text bg-gradient-to-r from-purple-400 via-pink-500 to-blue-500 animate-pulse" data-testid="landing-title">
-              Continents of Delarom
-            </h1>
-            <p className="text-2xl text-gray-300 mb-8 flex items-center justify-center gap-2">
-              <Sparkles className="w-6 h-6 text-yellow-400" />
-              Where Legends Are Written in the Stars
-              <Sparkles className="w-6 h-6 text-yellow-400" />
-            </p>
-            <div className="flex gap-4 justify-center mb-16" data-testid="cta-buttons">
-              <Link to="/register">
-                <Button size="lg" className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-lg px-8 py-6" data-testid="begin-journey-btn">
-                  🌟 Begin Your Journey
-                </Button>
-              </Link>
-              <Link to="/login">
-                <Button size="lg" variant="outline" className="border-purple-500/50 text-lg px-8 py-6" data-testid="return-realm-btn">
-                  ⚔️ Return to Realm
-                </Button>
-              </Link>
-            </div>
+        {/* Top hero — tagline + buttons near the top so the "Continents of
+            Delarom" logo in the background video is clearly visible below them
+            on the first screen. */}
+        <div className="min-h-screen flex flex-col items-center pt-12 px-4 text-center">
+          <p className="text-2xl text-gray-200 mb-8 flex items-center justify-center gap-2 drop-shadow-lg">
+            <Sparkles className="w-6 h-6 text-yellow-400" />
+            Where Legends Are Written in the Stars
+            <Sparkles className="w-6 h-6 text-yellow-400" />
+          </p>
+          <div className="flex flex-col sm:flex-row gap-4 justify-center" data-testid="cta-buttons">
+            <Link to="/register">
+              <Button size="lg" className="bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700 text-lg px-8 py-6" data-testid="begin-journey-btn">
+                🌟 Begin Your Journey
+              </Button>
+            </Link>
+            <Link to="/login">
+              <Button size="lg" variant="outline" className="border-purple-500/50 text-lg px-8 py-6" data-testid="return-realm-btn">
+                ⚔️ Return to Realm
+              </Button>
+            </Link>
           </div>
+        </div>
 
+        <div className="container mx-auto px-4 pb-20">
           {/* World Description */}
           <div className="glass-dark p-8 rounded-2xl max-w-5xl mx-auto mb-16">
             <h2 className="text-3xl font-bold text-center mb-6 text-purple-300">The World Awaits</h2>
