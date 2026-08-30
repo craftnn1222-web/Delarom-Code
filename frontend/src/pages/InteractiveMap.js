@@ -5,9 +5,10 @@ import AnimatedBackground from '../components/AnimatedBackground';
 import Navbar from '../components/Navbar';
 import { MapPin, Castle, Mountain, Swords, Sparkles, Eye, X, ChevronRight, Compass } from 'lucide-react';
 import { Button } from '../components/ui/button';
+import './mapEffects.css';
 
-// Map image URL
-const MAP_IMAGE_URL = "https://static.prod-images.emergentagent.com/jobs/a2050c21-a8da-4aba-9b1a-83d0b2bd384b/images/0c1b1c5396cb442ab41b1579925e8f2c24548dcdface9b2abb664d4517a1ad70.png";
+// Map image (bundled in /public for production reliability)
+const MAP_IMAGE_URL = "/tyrandria-map.png";
 
 // Nation data with map positions (percentages for responsive positioning)
 const NATIONS = [
@@ -19,8 +20,8 @@ const NATIONS = [
     icon: Castle,
     color: '#4ade80',
     glowColor: 'rgba(74, 222, 128, 0.5)',
-    position: { x: 38, y: 42 },
-    labelPosition: { x: 38, y: 36 },
+    position: { x: 31, y: 50 },
+    labelPosition: { x: 31, y: 43 },
     features: ['6 Major Cities', '12 Towns', '72 Locations'],
     race: 'Humans',
     ruler: 'Vritra Clan'
@@ -33,8 +34,8 @@ const NATIONS = [
     icon: Sparkles,
     color: '#60a5fa',
     glowColor: 'rgba(96, 165, 250, 0.5)',
-    position: { x: 52, y: 52 },
-    labelPosition: { x: 52, y: 46 },
+    position: { x: 58, y: 47 },
+    labelPosition: { x: 58, y: 40 },
     features: ['21 Districts/Cities', '10 Towns', '84 Locations'],
     race: 'Elves',
     ruler: 'Elder Council'
@@ -47,8 +48,8 @@ const NATIONS = [
     icon: Mountain,
     color: '#a78bfa',
     glowColor: 'rgba(167, 139, 250, 0.5)',
-    position: { x: 68, y: 62 },
-    labelPosition: { x: 68, y: 56 },
+    position: { x: 78, y: 58 },
+    labelPosition: { x: 78, y: 52 },
     features: ['8 Great Holds', '24 Cities', '307 Locations'],
     race: 'Dwarves',
     ruler: 'High King'
@@ -61,8 +62,8 @@ const NATIONS = [
     icon: Swords,
     color: '#f97316',
     glowColor: 'rgba(249, 115, 22, 0.5)',
-    position: { x: 52, y: 75 },
-    labelPosition: { x: 52, y: 69 },
+    position: { x: 57, y: 80 },
+    labelPosition: { x: 57, y: 74 },
     features: ['4 Faction Cities', '17 Locations', 'Active Conflict'],
     race: 'Mixed',
     ruler: 'Contested'
@@ -75,8 +76,8 @@ const NATIONS = [
     icon: Eye,
     color: '#ec4899',
     glowColor: 'rgba(236, 72, 153, 0.5)',
-    position: { x: 28, y: 68 },
-    labelPosition: { x: 28, y: 62 },
+    position: { x: 66, y: 22 },
+    labelPosition: { x: 66, y: 16 },
     features: ['3 Hidden Kingdoms', '18 Cities/Towns', '66 Locations'],
     race: 'Ancient Elves',
     ruler: 'Hidden Councils'
@@ -85,9 +86,9 @@ const NATIONS = [
 
 // Landmark markers
 const LANDMARKS = [
-  { id: 'shaaldier', name: "Shaaldier's Pass", type: 'mountain', position: { x: 22, y: 18 }, description: 'Massive mountain range separating Ammeonon from the Northern Wastes' },
-  { id: 'northern-wastes', name: 'Northern Wastes', type: 'wilderness', position: { x: 12, y: 8 }, description: 'Frozen tundra beyond the mountains, home to ancient terrors' },
-  { id: 'yillhone', name: 'Yillhone', type: 'capital', position: { x: 52, y: 50 }, description: 'The Crystal City, capital of Selindori' },
+  { id: 'shaaldier', name: "Shaaldier's Pass", type: 'mountain', position: { x: 24, y: 23 }, description: 'Massive mountain range separating Ammeonon from the Northern Wastes' },
+  { id: 'northern-wastes', name: 'Northern Wastes', type: 'wilderness', position: { x: 15, y: 9 }, description: 'Frozen tundra beyond the mountains, home to ancient terrors' },
+  { id: 'yillhone', name: 'Yillhone', type: 'capital', position: { x: 58, y: 44 }, description: 'The Crystal City, capital of Selindori' },
 ];
 
 const InteractiveMap = () => {
@@ -235,7 +236,7 @@ const InteractiveMap = () => {
       {/* Map Container */}
       <div 
         ref={containerRef}
-        className="relative z-10 w-full h-[calc(100vh-64px)] mt-16 overflow-hidden cursor-grab active:cursor-grabbing"
+        className="relative z-10 w-full h-[calc(100vh-64px)] mt-16 overflow-hidden cursor-grab active:cursor-grabbing flex items-center justify-center"
         onWheel={handleWheel}
         onMouseDown={handleMouseDown}
         onMouseMove={handleMouseMove}
@@ -276,7 +277,7 @@ const InteractiveMap = () => {
         {/* Map Image with Transform */}
         <motion.div
           ref={mapRef}
-          className="relative w-full h-full"
+          className="relative h-full max-w-full aspect-[3/2]"
           style={{
             transform: `scale(${zoom}) translate(${pan.x / zoom}px, ${pan.y / zoom}px)`,
             transformOrigin: 'center center'
@@ -293,6 +294,21 @@ const InteractiveMap = () => {
             onLoad={() => setMapLoaded(true)}
             draggable={false}
           />
+
+          {/* Ambient region effects — Selindori pulse, Dhor-Kuldor smoke, Northern Wastes fog */}
+          <div className="map-fx-root" data-testid="map-ambient-effects" aria-hidden="true">
+            <div className="map-fx-el map-fx-selindori" data-testid="fx-selindori-pulse" />
+            <div className="map-fx-el map-fx-volcano" data-testid="fx-dhorkuldor-smoke">
+              <div className="map-fx-smoke" />
+              <div className="map-fx-smoke" />
+              <div className="map-fx-smoke" />
+            </div>
+            <div className="map-fx-el map-fx-fog-region" data-testid="fx-northern-fog">
+              <div className="map-fx-fog" />
+              <div className="map-fx-fog" />
+              <div className="map-fx-fog" />
+            </div>
+          </div>
 
           {/* Fog of War Overlay */}
           {!showIntro && (

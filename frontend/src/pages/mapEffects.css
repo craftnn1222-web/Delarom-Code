@@ -1,0 +1,98 @@
+/* Ambient effects overlaid on the Tyrandria map (InteractiveMap page).
+   All layers are pointer-events:none so they never block nation clicks, and
+   positioned by % inside the 3:2 map box so they sit on the right regions. */
+.map-fx-root {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+  z-index: 5;
+}
+.map-fx-el { position: absolute; pointer-events: none; }
+
+/* 1. Selindori — crystal spires pulse with magic */
+.map-fx-selindori {
+  left: 58%;
+  top: 40%;
+  width: 15%;
+  height: 26%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 50% 45%,
+    rgba(150, 225, 255, 0.80),
+    rgba(80, 160, 255, 0.35) 45%,
+    rgba(80, 160, 255, 0) 72%);
+  mix-blend-mode: screen;
+  filter: blur(6px);
+  animation: fxSelindoriPulse 3.4s ease-in-out infinite;
+}
+@keyframes fxSelindoriPulse {
+  0%, 100% { opacity: 0.30; transform: translate(-50%, -50%) scale(0.80); }
+  50%      { opacity: 0.95; transform: translate(-50%, -50%) scale(1.12); }
+}
+
+/* 2. Dhor-Kuldor — smoky haze spewing from the volcano */
+.map-fx-volcano {
+  left: 76%;
+  top: 52%;
+  width: 13%;
+  height: 30%;
+  transform: translate(-50%, -70%);
+}
+.map-fx-smoke {
+  position: absolute;
+  bottom: 0;
+  left: 50%;
+  width: 60%;
+  height: 55%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 65%,
+    rgba(75, 68, 72, 0.60),
+    rgba(45, 40, 44, 0) 70%);
+  filter: blur(6px);
+  animation: fxSmokeRise 5.5s ease-in infinite;
+}
+.map-fx-smoke:nth-child(2) { animation-delay: 1.8s; left: 40%; width: 50%; }
+.map-fx-smoke:nth-child(3) { animation-delay: 3.4s; left: 60%; width: 45%; }
+@keyframes fxSmokeRise {
+  0%   { opacity: 0;    transform: translateX(-50%) translateY(15%)   scale(0.5); }
+  25%  { opacity: 0.55; }
+  100% { opacity: 0;    transform: translateX(-50%) translateY(-170%) scale(1.6); }
+}
+
+/* 3. Northern Wastes — fog flows down into Ammeonon */
+.map-fx-fog-region {
+  left: 3%;
+  top: 2%;
+  width: 45%;
+  height: 60%;
+  overflow: hidden;
+}
+.map-fx-fog {
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 65%;
+  height: 42%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at 40% 40%,
+    rgba(222, 236, 255, 0.55),
+    rgba(205, 222, 255, 0) 70%);
+  filter: blur(11px);
+  mix-blend-mode: screen;
+  animation: fxFogFlow 13s ease-in-out infinite;
+}
+.map-fx-fog:nth-child(2) { animation-delay: 4.3s; width: 55%; height: 38%; }
+.map-fx-fog:nth-child(3) { animation-delay: 8.6s; width: 75%; height: 48%; }
+@keyframes fxFogFlow {
+  0%   { opacity: 0;    transform: translate(-15%, -25%) scale(0.75); }
+  20%  { opacity: 0.60; }
+  60%  { opacity: 0.45; }
+  100% { opacity: 0;    transform: translate(70%, 95%) scale(1.30); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .map-fx-selindori, .map-fx-smoke, .map-fx-fog { animation: none; }
+  .map-fx-smoke, .map-fx-fog { opacity: 0.3; }
+}
