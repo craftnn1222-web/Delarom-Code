@@ -673,6 +673,19 @@ async def resume_image_batch_if_orphaned() -> None:
 
 
 @app.on_event("startup")
+async def ensure_image_batch_indexes() -> None:
+    """Index `image_id` on cities/locations so the image-batch 'missing image'
+    survey uses an index instead of a full COLLSCAN (which timed out against
+    Atlas and wedged the worker). Best-effort + idempotent."""
+    try:
+        from db_maintenance import ensure_image_indexes
+        await ensure_image_indexes(db)
+        logger.info("image_id indexes ensured")
+    except Exception as e:
+        logger.warning(f"ensure_image_indexes failed on startup: {e}")
+
+
+@app.on_event("startup")
 async def init_object_storage() -> None:
     """Warm the Emergent object-storage session key so image uploads/serves
     don't pay the init cost on first request. Best-effort."""
@@ -1136,6 +1149,18 @@ def verify_password(password: str, hashed: str) -> bool:
     return bcrypt.checkpw(password.encode('utf-8'), hashed.encode('utf-8'))
 
 
+# bcrypt is CPU-bound and blocks the event loop for ~100-300ms per call. On a
+# single uvicorn worker that stalls every other in-flight request (a burst of
+# logins previously starved the origin into Cloudflare timeouts). Offload the
+# hash/verify to a thread so the loop stays responsive. Identical bcrypt calls —
+# no change to hashing/verification semantics.
+async def hash_password_async(password: str) -> str:
+    return await asyncio.to_thread(hash_password, password)
+
+async def verify_password_async(password: str, hashed: str) -> bool:
+    return await asyncio.to_thread(verify_password, password, hashed)
+
+
 # ==================== TIER 2b — ESSENCE AFFINITY HINTING ====================
 
 _ESSENCE_KEYWORDS = {
@@ -1321,7 +1346,7 @@ async def register(user_data: UserRegister, request: Request, response: FastAPIR
     )
     
     user_doc = user.model_dump()
-    user_doc['password_hash'] = hash_password(user_data.password)
+    user_doc['password_hash'] = await hash_password_async(user_data.password)
     user_doc['created_at'] = user_doc['created_at'].isoformat()
     if user_doc.get('approved_at'):
         user_doc['approved_at'] = user_doc['approved_at'].isoformat()
@@ -1378,7 +1403,7 @@ async def login(user_data: UserLogin, request: Request, response: FastAPIRespons
     if not user_doc:
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
-    if not verify_password(user_data.password, user_doc['password_hash']):
+    if not await verify_password_async(user_data.password, user_doc['password_hash']):
         raise HTTPException(status_code=401, detail="Invalid credentials")
     
     # Normalize legacy users that predate the application system
@@ -1480,13 +1505,13 @@ async def change_password(
     if not user_doc:
         raise HTTPException(status_code=404, detail="User not found")
 
-    if not verify_password(payload.current_password, user_doc["password_hash"]):
+    if not await verify_password_async(payload.current_password, user_doc["password_hash"]):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
     if payload.new_password == payload.current_password:
         raise HTTPException(status_code=400, detail="New password must be different from current password")
 
-    new_hash = hash_password(payload.new_password)
+    new_hash = await hash_password_async(payload.new_password)
     await db.users.update_one(
         {"id": current_user.id},
         {"$set": {"password_hash": new_hash}},

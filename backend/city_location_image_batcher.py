@@ -63,6 +63,11 @@ async def _retry_db(coro_factory: Callable[[], Awaitable], *, attempts: int = 3,
 # items per kick-off.
 MAX_ITERATIONS = 60
 
+# Gentle throttle between individual image generations. Keeps a manual batch run
+# from pinning the event loop / hammering Atlas + the LLM (which previously
+# starved login requests). Configurable via env; default 0.75s.
+IMAGE_BATCH_THROTTLE_SECONDS = float(os.environ.get("IMAGE_BATCH_THROTTLE_SECONDS", "0.75"))
+
 # Mongo collection + doc id for persisting the batch state.
 STATE_COLL = "image_batch_state"
 STATE_DOC_ID = "singleton"
@@ -226,11 +231,18 @@ class CityLocationImageBatcher:
         handful of images.
         """
         try:
-            images = await self.image_gen.generate_images(
-                prompt=prompt,
-                model="gpt-image-1",
-                number_of_images=1,
-            )
+            # `generate_images` is awaitable but its underlying HTTP client blocks
+            # the event loop for the full ~10-15s of a generation. On the single
+            # worker that froze concurrent requests (a login spiked to ~14s during
+            # a batch). Run it in a worker thread (own event loop) so the main loop
+            # stays responsive while the image is generated.
+            def _run_generation():
+                return asyncio.run(self.image_gen.generate_images(
+                    prompt=prompt,
+                    model="gpt-image-1",
+                    number_of_images=1,
+                ))
+            images = await asyncio.to_thread(_run_generation)
         except Exception as e:
             logger.warning(f"Image gen failed: {e}")
             return None
@@ -290,6 +302,8 @@ class CityLocationImageBatcher:
             if _JOB_STATE.should_stop:
                 break
             prompt = _build_city_prompt(c)
+            if IMAGE_BATCH_THROTTLE_SECONDS > 0:
+                await asyncio.sleep(IMAGE_BATCH_THROTTLE_SECONDS)
             img_id = await self._generate_image_id(prompt)
             if img_id:
                 await _retry_db(
@@ -313,6 +327,8 @@ class CityLocationImageBatcher:
             if _JOB_STATE.should_stop:
                 break
             prompt = _build_location_prompt(loc)
+            if IMAGE_BATCH_THROTTLE_SECONDS > 0:
+                await asyncio.sleep(IMAGE_BATCH_THROTTLE_SECONDS)
             img_id = await self._generate_image_id(prompt)
             if img_id:
                 await _retry_db(

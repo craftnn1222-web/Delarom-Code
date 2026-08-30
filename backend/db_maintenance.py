@@ -119,6 +119,17 @@ async def dedupe_cities(db) -> dict:
     }
 
 
+async def ensure_image_indexes(db) -> dict:
+    """Non-unique index on `image_id` for cities + locations so the image-batch
+    'missing image' survey (`image_id` null/missing) uses an index instead of a
+    full COLLSCAN. The COLLSCAN was timing out against Atlas and pinning the
+    single worker. Safe + idempotent (create_index is a no-op if it exists)."""
+    created: list[str] = []
+    created.append(await db.cities.create_index([("image_id", ASCENDING)], name="cities_image_id"))
+    created.append(await db.locations.create_index([("image_id", ASCENDING)], name="locations_image_id"))
+    return {"indexes_present": created, "ts": _now_iso()}
+
+
 async def ensure_geo_indexes(db) -> dict:
     """Create the indexes that should have existed from day one. Idempotent —
     `create_index` is a no-op when an equivalent index already exists.
