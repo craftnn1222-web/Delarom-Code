@@ -4,7 +4,6 @@ import { Toaster } from 'sonner';
 import { AuthProvider } from './contexts/AuthContext';
 import { CharacterProvider } from './contexts/CharacterContext';
 import { MusicProvider } from './contexts/MusicContext';
-import MusicPlayer from './components/MusicPlayer';
 import LandingPage from './pages/LandingPage';
 import Register from './pages/Register';
 import Login from './pages/Login';
@@ -51,7 +50,6 @@ function App() {
       <MusicProvider>
         <BrowserRouter>
           <Toaster position="top-right" richColors offset={80} />
-          <MusicPlayer />
           <Routes>
           <Route path="/" element={<LandingPage />} />
           <Route path="/register" element={<Register />} />
