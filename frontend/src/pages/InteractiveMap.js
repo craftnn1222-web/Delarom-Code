@@ -86,7 +86,7 @@ const NATIONS = [
 
 // Landmark markers
 const LANDMARKS = [
-  { id: 'shaaldier', name: "Shaaldier's Pass", subtitle: 'Gateway of Stone and Snow', type: 'mountain', position: { x: 24, y: 23 }, description: 'The great mountain gate between Ammeonon and the Northern Wastes — a treacherous, snow-choked crossing few travellers brave alone.' },
+  { id: 'shaaldier', name: "Shaaldieer's Pass", subtitle: 'The Sleeping Zenith Emperor', type: 'mountain', position: { x: 24, y: 23 }, description: "Shaaldieer's Pass is a mountain range that spans the breadth of the northern part of Ammeonon, separating Ammeonon from the Northern Wastes. Legend has it that Shaaldieer's Pass is the body of a dragon \u2014 one of the Epochal Six: a Zenith Emperor whose body and power can shake the very foundations of the world. There are six such powers. In the year 215 A.E., the Epochal Six are separated by oceans, each continent being home to one\u2026 as well as the ocean housing one. Due to this, Shaaldieer is believed to be a legend, a myth, a story told to scare children into behaving. Little do they know, he is very real, and very much alive. Merely\u2026 sleeping." },
   { id: 'northern-wastes', name: 'Northern Wastes', subtitle: 'Realm of Eternal Frost', type: 'wilderness', position: { x: 15, y: 9 }, description: 'A frozen tundra beyond the mountains where aurora light dances over endless ice, and ancient terrors are said to slumber beneath the frost.' },
   { id: 'wondfaln', name: 'Wondfaln Deobono Das', subtitle: 'The Spine of Tyrandria', type: 'mountain', position: { x: 51, y: 24 }, description: 'The towering mountain range that forms the backbone of the realm, dividing north from south with jagged, cloud-wreathed peaks.' },
   { id: 'noritorn', name: 'Noritorn', subtitle: 'The Verdant North', type: 'forest', position: { x: 26, y: 40 }, description: 'Rolling green wilds and old-growth forest north of Ammeonon, thick with game, hidden groves, and quiet woodland roads.' },
@@ -573,7 +573,7 @@ const InteractiveMap = () => {
               data-testid="landmark-backdrop"
             />
             <motion.div
-              className="relative z-10 glass-dark border border-amber-500/40 rounded-2xl max-w-md w-full p-6"
+              className="relative z-10 glass-dark border border-amber-500/40 rounded-2xl max-w-md w-full p-6 max-h-[80vh] overflow-y-auto"
               initial={{ scale: 0.85, y: 20, opacity: 0 }}
               animate={{ scale: 1, y: 0, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
