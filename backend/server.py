@@ -649,12 +649,17 @@ class QuestAcceptance(BaseModel):
 
 @app.on_event("startup")
 async def resume_image_batch_if_orphaned() -> None:
-    """CRITICAL fix for the 'image batch never finishes across sessions'
-    bug (iteration_23 report). uvicorn --reload and Kubernetes pod
-    restarts silently kill the in-memory asyncio task. On every boot,
-    check the persisted job state — if the last run was `is_running` +
-    `auto_continue` when the process died AND there's still work to do,
-    auto-resume the batch."""
+    """Auto-resume the image batch after a restart — ONLY when explicitly
+    enabled via ENABLE_IMAGE_BATCH_AUTORUN=true. Default OFF.
+
+    Why default off: on production the batch auto-resumed on every boot and,
+    together with the watchdog relaunch, ran COLLSCAN surveys that timed out
+    against Atlas and wedged the single uvicorn worker — so login returned no
+    response and Cloudflare showed a 520. Admins now start the batch
+    deliberately from the Health dashboard when they want images generated."""
+    if os.environ.get("ENABLE_IMAGE_BATCH_AUTORUN", "false").strip().lower() != "true":
+        logger.info("image_batch auto-resume disabled (ENABLE_IMAGE_BATCH_AUTORUN != true)")
+        return
     try:
         from city_location_image_batcher import CityLocationImageBatcher
         result = await CityLocationImageBatcher.resume_if_needed(db)

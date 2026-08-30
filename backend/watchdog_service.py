@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import uuid
 from datetime import datetime, timezone
 from typing import Optional
@@ -27,6 +28,13 @@ CHECK_INTERVAL_SECONDS = 120
 DISK_WARN_PCT = 80.0
 DISK_CRITICAL_PCT = 92.0
 BATCH_HEARTBEAT_STALE_SECONDS = 420  # 7 min without a heartbeat while "running"
+
+
+def _image_batch_autorun_enabled() -> bool:
+    """Whether the watchdog may auto-(re)launch the image batch. Default OFF so
+    the batch can NEVER wedge the single production worker / hammer Atlas on its
+    own. Admins start it deliberately from the Health dashboard when desired."""
+    return os.environ.get("ENABLE_IMAGE_BATCH_AUTORUN", "false").strip().lower() == "true"
 
 # ---- in-memory state ----
 _latest: Optional[dict] = None
@@ -199,18 +207,24 @@ async def run_health_checks(db, *, remediate: bool = True, reset_errors: bool = 
     actions = []
 
     if remediate:
-        # (1) Relaunch a stalled batch that still has work.
+        # (1) Relaunch a stalled batch that still has work — ONLY when auto-run
+        # is explicitly enabled. Default OFF: an unattended relaunch loop was
+        # saturating the single production worker (COLLSCAN surveys timing out
+        # against Atlas) and causing Cloudflare 520s on login.
         if image_batch.get("stalled") and not image_batch.get("running"):
-            try:
-                from city_location_image_batcher import CityLocationImageBatcher
-                CityLocationImageBatcher(db, batch_size=25).kick_off_background_batch(auto_continue=True)
-                msg = f"Relaunched stalled image batch ({image_batch.get('remaining')} images remaining)"
-                actions.append(msg)
-                await _log_incident(db, "warning", "image_batch", msg, action="relaunched")
-                image_batch["status"] = "ok"
-                image_batch["detail"] = "Auto-relaunched by watchdog"
-            except Exception as e:
-                await _log_incident(db, "critical", "image_batch", f"Failed to relaunch batch: {e}")
+            if _image_batch_autorun_enabled():
+                try:
+                    from city_location_image_batcher import CityLocationImageBatcher
+                    CityLocationImageBatcher(db, batch_size=25).kick_off_background_batch(auto_continue=True)
+                    msg = f"Relaunched stalled image batch ({image_batch.get('remaining')} images remaining)"
+                    actions.append(msg)
+                    await _log_incident(db, "warning", "image_batch", msg, action="relaunched")
+                    image_batch["status"] = "ok"
+                    image_batch["detail"] = "Auto-relaunched by watchdog"
+                except Exception as e:
+                    await _log_incident(db, "critical", "image_batch", f"Failed to relaunch batch: {e}")
+            else:
+                image_batch["detail"] = "Stalled with work remaining — auto-relaunch disabled (start manually)."
         # (2) Protect the DB: stop the batch if disk is critical.
         if database.get("status") == "critical" and image_batch.get("running"):
             try:
