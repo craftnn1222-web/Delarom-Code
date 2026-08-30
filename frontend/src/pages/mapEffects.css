@@ -10,89 +10,155 @@
 }
 .map-fx-el { position: absolute; pointer-events: none; }
 
-/* 1. Selindori — crystal spires pulse with magic */
+/* ── Ley-lines: glowing energy flowing between the mystic gateways ────────── */
+.map-fx-leylines {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  mix-blend-mode: screen;
+}
+.ley-line {
+  fill: none;
+  stroke: rgba(255, 216, 140, 0.9);
+  stroke-width: 2.2;
+  vector-effect: non-scaling-stroke;
+  stroke-linecap: round;
+  stroke-dasharray: 5 13;
+  filter: drop-shadow(0 0 3px rgba(255, 198, 105, 0.95));
+  animation: leyFlow 3.4s linear infinite;
+}
+.ley-line:nth-child(2) { animation-delay: 0.6s; }
+.ley-line:nth-child(3) { animation-delay: 1.2s; }
+.ley-line:nth-child(4) { animation-delay: 1.8s; }
+.ley-line:nth-child(5) { animation-delay: 2.4s; }
+.ley-line:nth-child(6) { animation-delay: 3.0s; }
+@keyframes leyFlow { to { stroke-dashoffset: -180; } }
+
+/* ── 1. Selindori — crystal spires pulse with magic (STRONG) ─────────────── */
 .map-fx-selindori {
   left: 58%;
   top: 40%;
-  width: 15%;
-  height: 26%;
+  width: 19%;
+  height: 34%;
   transform: translate(-50%, -50%);
   border-radius: 50%;
   background: radial-gradient(ellipse at 50% 45%,
-    rgba(150, 225, 255, 0.80),
-    rgba(80, 160, 255, 0.35) 45%,
-    rgba(80, 160, 255, 0) 72%);
+    rgba(190, 240, 255, 0.98),
+    rgba(110, 185, 255, 0.6) 40%,
+    rgba(80, 160, 255, 0) 74%);
   mix-blend-mode: screen;
-  filter: blur(6px);
-  animation: fxSelindoriPulse 3.4s ease-in-out infinite;
+  filter: blur(5px);
+  animation: fxSelindoriPulse 3.2s ease-in-out infinite;
+}
+.map-fx-selindori::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: 46%;
+  width: 42%;
+  height: 42%;
+  transform: translate(-50%, -50%);
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.95), rgba(180, 230, 255, 0) 70%);
+  filter: blur(3px);
+  animation: fxSelindoriCore 3.2s ease-in-out infinite;
 }
 @keyframes fxSelindoriPulse {
-  0%, 100% { opacity: 0.30; transform: translate(-50%, -50%) scale(0.80); }
-  50%      { opacity: 0.95; transform: translate(-50%, -50%) scale(1.12); }
+  0%, 100% { opacity: 0.55; transform: translate(-50%, -50%) scale(0.85); }
+  50%      { opacity: 1;    transform: translate(-50%, -50%) scale(1.22); }
+}
+@keyframes fxSelindoriCore {
+  0%, 100% { opacity: 0.5; }
+  50%      { opacity: 1; }
 }
 
-/* 2. Dhor-Kuldor — smoky haze spewing from the volcano */
+/* ── 2. Dhor-Kuldor — smoky haze + embers from the volcano (STRONG) ──────── */
 .map-fx-volcano {
   left: 76%;
   top: 52%;
-  width: 13%;
-  height: 30%;
-  transform: translate(-50%, -70%);
+  width: 17%;
+  height: 36%;
+  transform: translate(-50%, -68%);
+}
+.map-fx-ember {
+  position: absolute;
+  bottom: 6%;
+  left: 50%;
+  width: 45%;
+  height: 22%;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 60%,
+    rgba(255, 150, 45, 0.75),
+    rgba(255, 90, 25, 0.35) 45%,
+    rgba(255, 70, 20, 0) 72%);
+  mix-blend-mode: screen;
+  filter: blur(5px);
+  animation: fxEmberGlow 2.6s ease-in-out infinite;
+}
+@keyframes fxEmberGlow {
+  0%, 100% { opacity: 0.55; transform: translateX(-50%) scale(0.9); }
+  50%      { opacity: 1;    transform: translateX(-50%) scale(1.12); }
 }
 .map-fx-smoke {
   position: absolute;
-  bottom: 0;
+  bottom: 8%;
   left: 50%;
-  width: 60%;
-  height: 55%;
+  width: 66%;
+  height: 60%;
   transform: translateX(-50%);
   border-radius: 50%;
   background: radial-gradient(circle at 50% 65%,
-    rgba(75, 68, 72, 0.60),
-    rgba(45, 40, 44, 0) 70%);
+    rgba(78, 70, 74, 0.78),
+    rgba(40, 35, 40, 0) 70%);
   filter: blur(6px);
-  animation: fxSmokeRise 5.5s ease-in infinite;
+  animation: fxSmokeRise 5s ease-in infinite;
 }
-.map-fx-smoke:nth-child(2) { animation-delay: 1.8s; left: 40%; width: 50%; }
-.map-fx-smoke:nth-child(3) { animation-delay: 3.4s; left: 60%; width: 45%; }
+.map-fx-smoke:nth-child(2) { animation-delay: 1.2s; left: 38%; width: 56%; }
+.map-fx-smoke:nth-child(3) { animation-delay: 2.4s; left: 62%; width: 52%; }
+.map-fx-smoke:nth-child(4) { animation-delay: 3.6s; left: 48%; width: 60%; }
 @keyframes fxSmokeRise {
   0%   { opacity: 0;    transform: translateX(-50%) translateY(15%)   scale(0.5); }
-  25%  { opacity: 0.55; }
-  100% { opacity: 0;    transform: translateX(-50%) translateY(-170%) scale(1.6); }
+  20%  { opacity: 0.8;  }
+  100% { opacity: 0;    transform: translateX(-50%) translateY(-190%) scale(1.7); }
 }
 
-/* 3. Northern Wastes — fog flows down into Ammeonon */
+/* ── 3. Northern Wastes — fog flows down into Ammeonon (STRONG) ──────────── */
 .map-fx-fog-region {
-  left: 3%;
-  top: 2%;
-  width: 45%;
-  height: 60%;
+  left: 2%;
+  top: 1%;
+  width: 50%;
+  height: 66%;
   overflow: hidden;
 }
 .map-fx-fog {
   position: absolute;
   left: 0;
   top: 0;
-  width: 65%;
-  height: 42%;
+  width: 68%;
+  height: 46%;
   border-radius: 50%;
   background: radial-gradient(ellipse at 40% 40%,
-    rgba(222, 236, 255, 0.55),
+    rgba(228, 240, 255, 0.8),
     rgba(205, 222, 255, 0) 70%);
-  filter: blur(11px);
+  filter: blur(9px);
   mix-blend-mode: screen;
-  animation: fxFogFlow 13s ease-in-out infinite;
+  animation: fxFogFlow 11s ease-in-out infinite;
 }
-.map-fx-fog:nth-child(2) { animation-delay: 4.3s; width: 55%; height: 38%; }
-.map-fx-fog:nth-child(3) { animation-delay: 8.6s; width: 75%; height: 48%; }
+.map-fx-fog:nth-child(2) { animation-delay: 2.7s; width: 58%; height: 40%; }
+.map-fx-fog:nth-child(3) { animation-delay: 5.5s; width: 78%; height: 52%; }
+.map-fx-fog:nth-child(4) { animation-delay: 8.2s; width: 64%; height: 44%; }
 @keyframes fxFogFlow {
   0%   { opacity: 0;    transform: translate(-15%, -25%) scale(0.75); }
-  20%  { opacity: 0.60; }
-  60%  { opacity: 0.45; }
-  100% { opacity: 0;    transform: translate(70%, 95%) scale(1.30); }
+  20%  { opacity: 0.85; }
+  60%  { opacity: 0.7;  }
+  100% { opacity: 0;    transform: translate(72%, 98%) scale(1.35); }
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .map-fx-selindori, .map-fx-smoke, .map-fx-fog { animation: none; }
-  .map-fx-smoke, .map-fx-fog { opacity: 0.3; }
+  .ley-line, .map-fx-selindori, .map-fx-selindori::after,
+  .map-fx-ember, .map-fx-smoke, .map-fx-fog { animation: none; }
+  .map-fx-smoke, .map-fx-fog { opacity: 0.35; }
 }

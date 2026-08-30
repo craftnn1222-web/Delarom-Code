@@ -86,9 +86,13 @@ const NATIONS = [
 
 // Landmark markers
 const LANDMARKS = [
-  { id: 'shaaldier', name: "Shaaldier's Pass", type: 'mountain', position: { x: 24, y: 23 }, description: 'Massive mountain range separating Ammeonon from the Northern Wastes' },
-  { id: 'northern-wastes', name: 'Northern Wastes', type: 'wilderness', position: { x: 15, y: 9 }, description: 'Frozen tundra beyond the mountains, home to ancient terrors' },
-  { id: 'yillhone', name: 'Yillhone', type: 'capital', position: { x: 58, y: 44 }, description: 'The Crystal City, capital of Selindori' },
+  { id: 'shaaldier', name: "Shaaldier's Pass", subtitle: 'Gateway of Stone and Snow', type: 'mountain', position: { x: 24, y: 23 }, description: 'The great mountain gate between Ammeonon and the Northern Wastes — a treacherous, snow-choked crossing few travellers brave alone.' },
+  { id: 'northern-wastes', name: 'Northern Wastes', subtitle: 'Realm of Eternal Frost', type: 'wilderness', position: { x: 15, y: 9 }, description: 'A frozen tundra beyond the mountains where aurora light dances over endless ice, and ancient terrors are said to slumber beneath the frost.' },
+  { id: 'wondfaln', name: 'Wondfaln Deobono Das', subtitle: 'The Spine of Tyrandria', type: 'mountain', position: { x: 51, y: 24 }, description: 'The towering mountain range that forms the backbone of the realm, dividing north from south with jagged, cloud-wreathed peaks.' },
+  { id: 'noritorn', name: 'Noritorn', subtitle: 'The Verdant North', type: 'forest', position: { x: 26, y: 40 }, description: 'Rolling green wilds and old-growth forest north of Ammeonon, thick with game, hidden groves, and quiet woodland roads.' },
+  { id: 'elon-forest', name: 'Elon Forest Farms', subtitle: 'The Emerald Heart', type: 'forest', position: { x: 69, y: 27 }, description: 'The lush farmlands and deep forest at the realm\u2019s green heart, feeding the eastern kingdoms.' },
+  { id: 'wrare-seacenes', name: 'Wrare Seacenes', subtitle: 'Waters of Mystery', type: 'sea', position: { x: 18, y: 66 }, description: 'Uncharted western seas said to hide sunken wonders, sea-beasts, and the wrecks of ships that never returned.' },
+  { id: 'yillhone', name: 'Yillhone', subtitle: 'City of Crystal and Light', type: 'capital', position: { x: 58, y: 44 }, description: 'The radiant Crystal City, capital of Selindori, where spires of living crystal channel the realm\u2019s deepest magic.' },
 ];
 
 const InteractiveMap = () => {
@@ -98,6 +102,7 @@ const InteractiveMap = () => {
   
   const [hoveredNation, setHoveredNation] = useState(null);
   const [selectedNation, setSelectedNation] = useState(null);
+  const [selectedLandmark, setSelectedLandmark] = useState(null);
   const [revealedNations, setRevealedNations] = useState([]);
   const [mapLoaded, setMapLoaded] = useState(false);
   const [showIntro, setShowIntro] = useState(true);
@@ -295,15 +300,26 @@ const InteractiveMap = () => {
             draggable={false}
           />
 
-          {/* Ambient region effects — Selindori pulse, Dhor-Kuldor smoke, Northern Wastes fog */}
+          {/* Ambient region effects — ley-lines, Selindori pulse, Dhor-Kuldor smoke, Northern Wastes fog */}
           <div className="map-fx-root" data-testid="map-ambient-effects" aria-hidden="true">
+            <svg className="map-fx-leylines" viewBox="0 0 150 100" preserveAspectRatio="none" data-testid="fx-leylines">
+              <line className="ley-line" x1="87" y1="61" x2="46.5" y2="50" />
+              <line className="ley-line" x1="87" y1="61" x2="117" y2="58" />
+              <line className="ley-line" x1="87" y1="61" x2="85.5" y2="80" />
+              <line className="ley-line" x1="87" y1="61" x2="99" y2="22" />
+              <line className="ley-line" x1="87" y1="61" x2="22.5" y2="9" />
+              <line className="ley-line" x1="87" y1="61" x2="87" y2="47" />
+            </svg>
             <div className="map-fx-el map-fx-selindori" data-testid="fx-selindori-pulse" />
             <div className="map-fx-el map-fx-volcano" data-testid="fx-dhorkuldor-smoke">
               <div className="map-fx-smoke" />
               <div className="map-fx-smoke" />
               <div className="map-fx-smoke" />
+              <div className="map-fx-smoke" />
+              <div className="map-fx-ember" />
             </div>
             <div className="map-fx-el map-fx-fog-region" data-testid="fx-northern-fog">
+              <div className="map-fx-fog" />
               <div className="map-fx-fog" />
               <div className="map-fx-fog" />
               <div className="map-fx-fog" />
@@ -430,29 +446,34 @@ const InteractiveMap = () => {
             );
           })}
 
-          {/* Landmark Markers */}
+          {/* Landmark Markers (clickable lore) */}
           {!showIntro && LANDMARKS.map((landmark) => (
-            <motion.div
+            <motion.button
               key={landmark.id}
-              className="absolute"
+              type="button"
+              className="absolute cursor-pointer"
               style={{
                 left: `${landmark.position.x}%`,
                 top: `${landmark.position.y}%`,
                 transform: 'translate(-50%, -50%)'
               }}
               initial={{ opacity: 0 }}
-              animate={{ opacity: revealedNations.length >= 3 ? 0.7 : 0 }}
+              animate={{ opacity: revealedNations.length >= 3 ? 1 : 0 }}
               transition={{ duration: 0.5, delay: 2 }}
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); setSelectedLandmark(landmark); }}
+              data-testid={`landmark-marker-${landmark.id}`}
             >
-              <div className="relative group">
-                <MapPin className="w-4 h-4 text-amber-400" />
-                <div className="absolute bottom-full left-1/2 transform -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
-                  <div className="bg-black/90 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
+              <div className="relative group flex items-center justify-center">
+                <span className="absolute w-6 h-6 rounded-full bg-amber-400/40 blur-md animate-pulse" />
+                <MapPin className="relative w-5 h-5 text-amber-300 drop-shadow-[0_0_6px_rgba(251,191,36,0.95)]" />
+                <div className="absolute bottom-full left-1/2 -translate-x-1/2 mb-2 opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none">
+                  <div className="bg-black/90 text-amber-200 text-xs px-2 py-1 rounded whitespace-nowrap border border-amber-500/40">
                     {landmark.name}
                   </div>
                 </div>
               </div>
-            </motion.div>
+            </motion.button>
           ))}
         </motion.div>
       </div>
@@ -533,6 +554,52 @@ const InteractiveMap = () => {
                 <ChevronRight className="ml-2 w-5 h-5" />
               </Button>
             </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      {/* Landmark Lore Popup */}
+      <AnimatePresence>
+        {selectedLandmark && (
+          <motion.div
+            className="fixed inset-0 z-40 flex items-center justify-center p-4"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+          >
+            <div
+              className="absolute inset-0 bg-black/60"
+              onClick={() => setSelectedLandmark(null)}
+              data-testid="landmark-backdrop"
+            />
+            <motion.div
+              className="relative z-10 glass-dark border border-amber-500/40 rounded-2xl max-w-md w-full p-6"
+              initial={{ scale: 0.85, y: 20, opacity: 0 }}
+              animate={{ scale: 1, y: 0, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 22 }}
+              data-testid="landmark-lore-popup"
+            >
+              <button
+                onClick={() => setSelectedLandmark(null)}
+                className="absolute top-3 right-3 text-gray-400 hover:text-white"
+                data-testid="close-landmark-btn"
+              >
+                <X className="w-5 h-5" />
+              </button>
+              <div className="flex items-start gap-3 mb-4">
+                <div className="w-11 h-11 rounded-full flex items-center justify-center bg-amber-400/15 border border-amber-400/50 shrink-0">
+                  <MapPin className="w-5 h-5 text-amber-300" />
+                </div>
+                <div>
+                  <h3 className="text-2xl font-bold text-amber-300 leading-tight">{selectedLandmark.name}</h3>
+                  {selectedLandmark.subtitle && (
+                    <p className="text-amber-200/70 text-sm italic">{selectedLandmark.subtitle}</p>
+                  )}
+                </div>
+              </div>
+              <p className="text-gray-300 leading-relaxed">{selectedLandmark.description}</p>
+            </motion.div>
           </motion.div>
         )}
       </AnimatePresence>
