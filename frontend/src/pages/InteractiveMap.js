@@ -16,6 +16,8 @@ const NATIONS = [
     id: 'ammeonon',
     name: 'Ammeonon',
     slug: 'ammeonon',
+    emblem: '/emblems/ammeonon.png',
+    cinematic: 'https://customer-assets-7cd3h4nn.emergentagent.net/wingman/1fc0f0d8-b8b5-4b5b-9e04-048953a767c4/attachments/71d1c58725d24b3e825c10f777ef4eba_ammeonon_purged.mp4',
     description: 'The Northern Kingdom of Humans, ruled by the mighty Vritra Clan. A land of rolling green hills, ancient forests, and bustling trade routes.',
     icon: Castle,
     color: '#4ade80',
@@ -30,6 +32,8 @@ const NATIONS = [
     id: 'selindori',
     name: 'Selindori',
     slug: 'selindori',
+    emblem: '/emblems/selindori.png',
+    cinematic: 'https://customer-assets-7cd3h4nn.emergentagent.net/wingman/1fc0f0d8-b8b5-4b5b-9e04-048953a767c4/attachments/a79e10fd114a456cabd6b8ecdd31d7a7_selindori_purged.mp4',
     description: 'Kingdom of the First Elves, a mystical realm of crystal spires, ancient magic, and the legendary city of Yillhone.',
     icon: Sparkles,
     color: '#60a5fa',
@@ -44,6 +48,8 @@ const NATIONS = [
     id: 'dhor-kuldor',
     name: 'Dhor-Kuldor',
     slug: 'dhor-kuldor',
+    emblem: '/emblems/dhor-kuldor.png',
+    cinematic: 'https://customer-assets-7cd3h4nn.emergentagent.net/wingman/1fc0f0d8-b8b5-4b5b-9e04-048953a767c4/attachments/0725e79d77614bbda679e69c0b28c398_dhor_kuldor_purged.mp4',
     description: 'The ancient Dwarven Mountain Kingdom, home to 8000+ years of civilization carved into the very mountains themselves.',
     icon: Mountain,
     color: '#a78bfa',
@@ -58,6 +64,8 @@ const NATIONS = [
     id: 'aigraels',
     name: 'Aigraels',
     slug: 'aigraels',
+    emblem: '/emblems/aigraels.png',
+    cinematic: 'https://customer-assets-7cd3h4nn.emergentagent.net/wingman/1fc0f0d8-b8b5-4b5b-9e04-048953a767c4/attachments/464d1a7ca6c44df486409cfcbe2c075c_aigraels_purged.mp4',
     description: 'A wartorn nation divided by three factions: the Ardent Legion, the Forsaken Court, and the Elderborn Alliance.',
     icon: Swords,
     color: '#f97316',
@@ -72,6 +80,8 @@ const NATIONS = [
     id: 'veiled-realms',
     name: 'The Veiled Realms',
     slug: 'veiled-realms',
+    emblem: '/emblems/veiled-realms.png',
+    cinematic: null,
     description: 'Hidden ancient kingdoms protected by powerful barrier magic. Home to Moon Elves, Shadow Elves, and Crystal Elves.',
     icon: Eye,
     color: '#ec4899',
@@ -101,7 +111,8 @@ const InteractiveMap = () => {
   const containerRef = useRef(null);
   
   const [hoveredNation, setHoveredNation] = useState(null);
-  const [selectedNation, setSelectedNation] = useState(null);
+  const [cinematicNation, setCinematicNation] = useState(null);
+  const cinematicRef = useRef(null);
   const [selectedLandmark, setSelectedLandmark] = useState(null);
   const [revealedNations, setRevealedNations] = useState([]);
   const [mapLoaded, setMapLoaded] = useState(false);
@@ -159,16 +170,36 @@ const InteractiveMap = () => {
     setPan({ x: 0, y: 0 });
   };
 
-  // Navigate to nation
+  // Click a nation → play its cinematic, then head to the city chooser.
   const handleNationClick = (nation) => {
-    setSelectedNation(nation);
-  };
-
-  const goToNation = () => {
-    if (selectedNation) {
-      navigate(`/nations/${selectedNation.slug}/cities`);
+    setHoveredNation(null);
+    if (nation.cinematic) {
+      setCinematicNation(nation);
+    } else {
+      // Veiled Realms has no clip (it is part of Selindori) → go straight in.
+      navigate(`/nations/${nation.slug}/cities`);
     }
   };
+
+  const finishCinematic = () => {
+    if (cinematicNation) {
+      navigate(`/nations/${cinematicNation.slug}/cities`);
+      setCinematicNation(null);
+    }
+  };
+
+  // Autoplay the cinematic with sound (the click is a user gesture); fall back
+  // to muted if the browser still blocks it.
+  useEffect(() => {
+    if (!cinematicNation) return;
+    const v = cinematicRef.current;
+    if (!v) return;
+    v.muted = false;
+    const p = v.play();
+    if (p && typeof p.catch === 'function') {
+      p.catch(() => { v.muted = true; v.play().catch(() => {}); });
+    }
+  }, [cinematicNation]);
 
   // Start exploring (dismiss intro)
   const startExploring = () => {
@@ -347,7 +378,6 @@ const InteractiveMap = () => {
           {!showIntro && NATIONS.map((nation) => {
             const isRevealed = revealedNations.includes(nation.id);
             const isHovered = hoveredNation === nation.id;
-            const Icon = nation.icon;
 
             return (
               <motion.div
@@ -384,23 +414,24 @@ const InteractiveMap = () => {
                   transition={{ duration: 0.3 }}
                 />
                 
-                {/* Marker Icon */}
+                {/* Marker Emblem */}
                 <motion.div
-                  className="relative z-10 w-12 h-12 rounded-full flex items-center justify-center border-2"
-                  style={{ 
-                    backgroundColor: `${nation.color}20`,
-                    borderColor: nation.color
-                  }}
+                  className="relative z-10 w-16 h-16 flex items-center justify-center"
                   animate={{
                     scale: isHovered ? 1.2 : 1,
-                    boxShadow: isHovered 
-                      ? `0 0 30px ${nation.glowColor}` 
-                      : `0 0 10px ${nation.glowColor}`
+                    filter: isHovered
+                      ? `drop-shadow(0 0 16px ${nation.glowColor})`
+                      : `drop-shadow(0 0 8px ${nation.glowColor})`
                   }}
                   whileHover={{ scale: 1.2 }}
                   whileTap={{ scale: 0.95 }}
                 >
-                  <Icon className="w-6 h-6" style={{ color: nation.color }} />
+                  <img
+                    src={nation.emblem}
+                    alt={`${nation.name} emblem`}
+                    className="w-full h-full object-contain drop-shadow-[0_2px_6px_rgba(0,0,0,0.7)]"
+                    draggable={false}
+                  />
                 </motion.div>
 
                 {/* Nation Label */}
@@ -480,80 +511,37 @@ const InteractiveMap = () => {
 
       {/* Nation Info Panel */}
       <AnimatePresence>
-        {selectedNation && (
+        {cinematicNation && (
           <motion.div
-            className="fixed right-0 top-16 bottom-0 w-96 bg-gray-900/95 border-l border-purple-500/30 z-40 overflow-y-auto"
-            initial={{ x: '100%' }}
-            animate={{ x: 0 }}
-            exit={{ x: '100%' }}
-            transition={{ type: 'spring', damping: 25 }}
+            className="fixed inset-0 z-50 bg-black flex items-center justify-center"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            data-testid="nation-cinematic"
           >
-            <div className="p-6">
-              {/* Close Button */}
-              <button
-                onClick={() => setSelectedNation(null)}
-                className="absolute top-4 right-4 text-gray-400 hover:text-white"
-                data-testid="close-panel-btn"
-              >
-                <X className="w-6 h-6" />
-              </button>
-
-              {/* Nation Header */}
-              <div className="mb-6">
-                <div 
-                  className="w-16 h-16 rounded-full flex items-center justify-center mb-4"
-                  style={{ 
-                    backgroundColor: `${selectedNation.color}20`,
-                    border: `2px solid ${selectedNation.color}`
-                  }}
-                >
-                  <selectedNation.icon className="w-8 h-8" style={{ color: selectedNation.color }} />
-                </div>
-                <h2 
-                  className="text-3xl font-bold mb-2"
-                  style={{ color: selectedNation.color }}
-                >
-                  {selectedNation.name}
-                </h2>
-                <p className="text-gray-400">{selectedNation.description}</p>
-              </div>
-
-              {/* Nation Stats */}
-              <div className="space-y-4 mb-6">
-                <div className="glass p-4 rounded-lg">
-                  <h3 className="text-sm text-gray-400 mb-2">Dominant Race</h3>
-                  <p className="text-white font-semibold">{selectedNation.race}</p>
-                </div>
-                <div className="glass p-4 rounded-lg">
-                  <h3 className="text-sm text-gray-400 mb-2">Ruling Power</h3>
-                  <p className="text-white font-semibold">{selectedNation.ruler}</p>
-                </div>
-                <div className="glass p-4 rounded-lg">
-                  <h3 className="text-sm text-gray-400 mb-2">Features</h3>
-                  <ul className="space-y-1">
-                    {selectedNation.features.map((feature) => (
-                      <li key={feature} className="text-white flex items-center gap-2">
-                        <span style={{ color: selectedNation.color }}>•</span>
-                        {feature}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              </div>
-
-              {/* Action Button */}
-              <Button
-                onClick={goToNation}
-                className="w-full py-6 text-lg font-semibold"
-                style={{ 
-                  background: `linear-gradient(135deg, ${selectedNation.color}, ${selectedNation.color}88)` 
-                }}
-                data-testid="explore-nation-btn"
-              >
-                Explore {selectedNation.name}
-                <ChevronRight className="ml-2 w-5 h-5" />
-              </Button>
+            <video
+              ref={cinematicRef}
+              src={cinematicNation.cinematic}
+              autoPlay
+              playsInline
+              onEnded={finishCinematic}
+              className="w-full h-full object-contain"
+              data-testid="nation-cinematic-video"
+            />
+            <div
+              className="absolute top-5 left-6 text-white/90 text-lg font-semibold tracking-wide drop-shadow"
+              data-testid="cinematic-nation-name"
+            >
+              {cinematicNation.name}
             </div>
+            <button
+              onClick={finishCinematic}
+              className="absolute top-5 right-6 flex items-center gap-2 px-5 py-2 rounded-full bg-white/10 hover:bg-white/20 border border-white/30 text-white backdrop-blur-md transition-colors"
+              data-testid="skip-cinematic-btn"
+            >
+              Enter {cinematicNation.name}
+              <ChevronRight className="w-5 h-5" />
+            </button>
           </motion.div>
         )}
       </AnimatePresence>
