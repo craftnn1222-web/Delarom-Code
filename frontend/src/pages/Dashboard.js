@@ -1,11 +1,12 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { Link } from 'react-router-dom';
-import { getMe, getMyCharacters, getTransactions, getContinueState } from '../utils/api';
+import { getMe, getMyCharacters, getTransactions, getContinueState, updateOnboarding } from '../utils/api';
 import { useCharacter } from '../contexts/CharacterContext';
 import FactionBadge from '../components/factions/FactionBadge';
 import useFactionBadges from '../hooks/useFactionBadges';
 import AnimatedBackground from '../components/AnimatedBackground';
 import Navbar from '../components/Navbar';
+import WelcomeOnboarding from '../components/WelcomeOnboarding';
 import { Button } from '../components/ui/button';
 import { Coins, Scroll, Sword, ShoppingBag, TrendingUp, TrendingDown, Users, Skull, Flag, PlayCircle, MapPin } from 'lucide-react';
 import { toast } from 'sonner';
@@ -16,6 +17,9 @@ const Dashboard = () => {
   const [transactions, setTransactions] = useState([]);
   const [continueState, setContinueState] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [showWelcome, setShowWelcome] = useState(false);
+  const [welcomeStep, setWelcomeStep] = useState(0);
+  const welcomeDismissed = useRef(false);
 
   const { characters: roster, activeCharacter, switchCharacter } = useCharacter();
   const [switching, setSwitching] = useState(null);
@@ -52,7 +56,16 @@ const Dashboard = () => {
       getTransactions(),
       getContinueState()
     ]);
-    if (userRes.status === 'fulfilled') setUser(userRes.value.data);
+    if (userRes.status === 'fulfilled') {
+      const u = userRes.value.data;
+      setUser(u);
+      // One-time richer welcome flow: show it whenever the account hasn't
+      // completed onboarding yet (new sign-ups), resuming at the saved step.
+      if (u && u.onboarding_completed === false && !welcomeDismissed.current) {
+        setWelcomeStep(u.onboarding_step || 0);
+        setShowWelcome(true);
+      }
+    }
     if (charRes.status === 'fulfilled') setCharacters(charRes.value.data);
     if (transRes.status === 'fulfilled') setTransactions(transRes.value.data.slice(0, 5));
     if (contRes.status === 'fulfilled') setContinueState(contRes.value.data);
@@ -80,6 +93,17 @@ const Dashboard = () => {
     <div className="min-h-screen relative">
       <AnimatedBackground />
       <Navbar />
+      <WelcomeOnboarding
+        open={showWelcome}
+        username={user?.username}
+        initialStep={welcomeStep}
+        onStepChange={(s) => { updateOnboarding({ step: s }).catch(() => {}); }}
+        onClose={() => {
+          welcomeDismissed.current = true;
+          setShowWelcome(false);
+          updateOnboarding({ completed: true }).catch(() => {});
+        }}
+      />
       
       <div className="relative z-10 container mx-auto px-4 py-8">
         {/* Welcome Header */}

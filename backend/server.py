@@ -538,6 +538,8 @@ class User(BaseModel):
     suspension_reason: Optional[str] = None
     ban_reason: Optional[str] = None
     active_character_id: Optional[str] = None  # global "who am I playing" hero
+    onboarding_completed: bool = False  # richer first-time welcome flow (one-time)
+    onboarding_step: int = 0  # last-seen step so a mid-flow refresh resumes
     created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
 
 class UserResponse(BaseModel):
@@ -548,6 +550,8 @@ class UserResponse(BaseModel):
     role: str
     status: str
     active_character_id: Optional[str] = None
+    onboarding_completed: bool = False
+    onboarding_step: int = 0
     created_at: datetime
 
 # Character Models
@@ -700,6 +704,22 @@ async def activate_pending_accounts() -> None:
             logger.info(f"Auto-activated {res.modified_count} previously-pending accounts")
     except Exception as e:
         logger.warning(f"activate_pending_accounts failed: {e}")
+
+
+@app.on_event("startup")
+async def backfill_onboarding_flag() -> None:
+    """The richer welcome onboarding is one-time for NEW accounts. Existing
+    players should never be shown it, so mark any user missing the flag as
+    already-completed. Idempotent (only touches docs without the field)."""
+    try:
+        res = await db.users.update_many(
+            {"onboarding_completed": {"$exists": False}},
+            {"$set": {"onboarding_completed": True, "onboarding_step": 0}},
+        )
+        if res.modified_count:
+            logger.info(f"Backfilled onboarding_completed on {res.modified_count} existing users")
+    except Exception as e:
+        logger.warning(f"backfill_onboarding_flag failed: {e}")
 
 
 @app.on_event("startup")
@@ -2440,6 +2460,43 @@ async def get_continue_state(current_user: User = Depends(get_current_user)):
         }
 
     return {"last_scene": last_scene, "active_party": active_party}
+
+
+class OnboardingUpdate(BaseModel):
+    completed: Optional[bool] = None
+    step: Optional[int] = None
+
+
+@api_router.get("/me/onboarding")
+async def get_onboarding_state(current_user: User = Depends(get_current_user)):
+    """First-time welcome flow state for the current player."""
+    return {
+        "completed": bool(getattr(current_user, "onboarding_completed", False)),
+        "step": int(getattr(current_user, "onboarding_step", 0) or 0),
+    }
+
+
+@api_router.put("/me/onboarding")
+async def update_onboarding_state(
+    body: OnboardingUpdate, current_user: User = Depends(get_current_user)
+):
+    """Persist onboarding progress (step) or mark it complete. One-time: once
+    `completed` is true the welcome flow is never shown again for this account."""
+    updates: dict = {}
+    if body.completed is not None:
+        updates["onboarding_completed"] = bool(body.completed)
+    if body.step is not None:
+        updates["onboarding_step"] = max(0, int(body.step))
+    if updates:
+        await db.users.update_one({"id": current_user.id}, {"$set": updates})
+    return {
+        "completed": updates.get(
+            "onboarding_completed", bool(getattr(current_user, "onboarding_completed", False))
+        ),
+        "step": updates.get(
+            "onboarding_step", int(getattr(current_user, "onboarding_step", 0) or 0)
+        ),
+    }
 
 
 # ==================== NPC MEMORY & SCENE STATE ROUTES ====================
