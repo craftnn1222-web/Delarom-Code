@@ -686,6 +686,23 @@ async def ensure_image_batch_indexes() -> None:
 
 
 @app.on_event("startup")
+async def activate_pending_accounts() -> None:
+    """The manual approval step was removed — accounts are active on
+    registration. Bulk-activate any users left in the old 'pending' state so no
+    one is stranded from before this change. Idempotent."""
+    try:
+        now = datetime.now(timezone.utc).isoformat()
+        res = await db.users.update_many(
+            {"status": "pending"},
+            {"$set": {"status": "active", "approved_by": "system", "approved_at": now}},
+        )
+        if res.modified_count:
+            logger.info(f"Auto-activated {res.modified_count} previously-pending accounts")
+    except Exception as e:
+        logger.warning(f"activate_pending_accounts failed: {e}")
+
+
+@app.on_event("startup")
 async def init_object_storage() -> None:
     """Warm the Emergent object-storage session key so image uploads/serves
     don't pay the init cost on first request. Best-effort."""
@@ -1289,8 +1306,6 @@ async def get_current_user(request: Request) -> User:
     if user.status == "suspended":
         if user.suspended_until and user.suspended_until > datetime.now(timezone.utc):
             raise HTTPException(status_code=403, detail="Account is suspended")
-    if user.status == "pending":
-        raise HTTPException(status_code=403, detail="Account pending approval")
     
     return user
 
@@ -1335,18 +1350,20 @@ async def register(user_data: UserRegister, request: Request, response: FastAPIR
     if existing_username:
         raise HTTPException(status_code=400, detail="Username already taken")
     
-    # Create user with pending status (requires admin approval)
+    # Accounts are active immediately — no admin approval step.
     user = User(
         username=user_data.username,
         email=user_data.email,
         currency=1000,
         role="member",
-        status="pending",  # Pending admin approval
+        status="active",
         application_text=user_data.application_text
     )
     
     user_doc = user.model_dump()
     user_doc['password_hash'] = await hash_password_async(user_data.password)
+    user_doc['approved_by'] = 'system'
+    user_doc['approved_at'] = datetime.now(timezone.utc)
     user_doc['created_at'] = user_doc['created_at'].isoformat()
     if user_doc.get('approved_at'):
         user_doc['approved_at'] = user_doc['approved_at'].isoformat()
@@ -1449,10 +1466,6 @@ async def login(user_data: UserLogin, request: Request, response: FastAPIRespons
                 {"$set": {"status": "active", "suspended_until": None, "suspension_reason": None}}
             )
             user.status = "active"
-    
-    # Only treat users as pending if they actually have an application_text
-    if user.status == "pending" and user.application_text:
-        raise HTTPException(status_code=403, detail="Your application is pending admin approval. Please wait for approval before logging in.")
     
     access_token = create_access_token({"sub": user.id})
     set_auth_cookie(response, access_token)

@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { register } from '../utils/api';
+import { useAuth } from '../contexts/AuthContext';
 import { toast } from 'sonner';
 import AnimatedBackground from '../components/AnimatedBackground';
 import { Button } from '../components/ui/button';
@@ -9,6 +10,7 @@ import { Label } from '../components/ui/label';
 
 const Register = () => {
   const navigate = useNavigate();
+  const { login: setAuthUser } = useAuth();
   const [formData, setFormData] = useState({
     username: '',
     email: '',
@@ -26,9 +28,10 @@ const Register = () => {
     setLoading(true);
 
     try {
-      await register(formData);
-      toast.success('Application submitted! Please wait for admin approval before logging in.');
-      navigate('/login');
+      const response = await register(formData);
+      setAuthUser(response.data.access_token, response.data.user);
+      toast.success('Welcome to Delarom! Your journey begins.');
+      navigate('/dashboard');
     } catch (error) {
       toast.error(error.response?.data?.detail || 'Registration failed');
     } finally {
@@ -94,19 +97,18 @@ const Register = () => {
             </div>
 
             <div>
-              <Label htmlFor="application_text" className="text-gray-300">Application</Label>
+              <Label htmlFor="application_text" className="text-gray-300">Character Intro <span className="text-gray-500">(optional)</span></Label>
               <textarea
                 id="application_text"
                 name="application_text"
                 value={formData.application_text}
                 onChange={handleChange}
-                required
                 rows="4"
                 className="w-full bg-black/20 border border-purple-500/30 text-white rounded-md p-2 resize-none"
-                placeholder="Tell us why you want to join Continents of Delarom..."
+                placeholder="Tell us about your character or why you're joining (optional)..."
                 data-testid="application-input"
               />
-              <p className="text-xs text-gray-500 mt-1">Your application will be reviewed by an admin</p>
+              <p className="text-xs text-gray-500 mt-1">Optional — you can start role-playing right away</p>
             </div>
 
             <Button
