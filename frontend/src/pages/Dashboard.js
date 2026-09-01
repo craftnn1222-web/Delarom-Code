@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { Link } from 'react-router-dom';
-import { getMe, getMyCharacters, getTransactions, getContinueState, updateOnboarding } from '../utils/api';
+import { Link, useNavigate } from 'react-router-dom';
+import { getMe, getMyCharacters, getTransactions, getContinueState, updateOnboarding, startStarterQuest } from '../utils/api';
 import { useCharacter } from '../contexts/CharacterContext';
 import FactionBadge from '../components/factions/FactionBadge';
 import useFactionBadges from '../hooks/useFactionBadges';
@@ -12,6 +12,7 @@ import { Coins, Scroll, Sword, ShoppingBag, TrendingUp, TrendingDown, Users, Sku
 import { toast } from 'sonner';
 
 const Dashboard = () => {
+  const navigate = useNavigate();
   const [user, setUser] = useState(null);
   const [characters, setCharacters] = useState([]);
   const [transactions, setTransactions] = useState([]);
@@ -102,6 +103,25 @@ const Dashboard = () => {
           welcomeDismissed.current = true;
           setShowWelcome(false);
           updateOnboarding({ completed: true }).catch(() => {});
+        }}
+        onFirstQuest={async () => {
+          welcomeDismissed.current = true;
+          setShowWelcome(false);
+          updateOnboarding({ completed: true }).catch(() => {});
+          const tid = toast.loading('The Quest Master is preparing your first scene...');
+          try {
+            const res = await startStarterQuest();
+            toast.dismiss(tid);
+            if (res.data?.needs_character) {
+              toast.info('First, forge your hero — then your quest begins.');
+              navigate('/characters?starter=1');
+            } else if (res.data?.quest_id) {
+              navigate(`/quests/${res.data.quest_id}/play`);
+            }
+          } catch (_e) {
+            toast.dismiss(tid);
+            toast.error('Could not start your first quest — you can begin from the Quest Board.');
+          }
         }}
       />
       

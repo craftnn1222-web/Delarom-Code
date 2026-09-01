@@ -72,6 +72,7 @@ export const setActiveCharacterApi = (characterId) => api.put('/characters/activ
 export const getContinueState = () => api.get('/me/continue');
 export const getOnboarding = () => api.get('/me/onboarding');
 export const updateOnboarding = (data) => api.put('/me/onboarding', data);
+export const startStarterQuest = () => api.post('/me/starter-quest');
 
 export const fetchInbox = (characterId) => api.get(`/characters/${characterId}/letters/inbox`);
 export const fetchSentLetters = (characterId) => api.get(`/characters/${characterId}/letters/sent`);

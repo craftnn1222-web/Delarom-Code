@@ -2499,6 +2499,93 @@ async def update_onboarding_state(
     }
 
 
+@api_router.post("/me/starter-quest")
+async def start_starter_quest(current_user: User = Depends(get_current_user)):
+    """First-quest handoff: give a brand-new player a personal, low-stakes
+    starter scene they can roleplay immediately. Idempotent — returns the
+    existing starter quest if one was already created. RP is character-driven,
+    so returns needs_character=True when the player has no hero yet."""
+    char = await resolve_active_character(current_user)
+    if not char:
+        return {"needs_character": True, "quest_id": None}
+
+    # Idempotent: reuse an existing personal starter quest.
+    existing = await db.quests.find_one(
+        {"creator_id": current_user.id, "category": "starter"}, {"_id": 0}
+    )
+    if existing:
+        acc = await db.quest_acceptances.find_one(
+            {"quest_id": existing["id"], "user_id": current_user.id}
+        )
+        if not acc:
+            acceptance = QuestAcceptance(
+                quest_id=existing["id"], user_id=current_user.id, character_id=char["id"]
+            )
+            acc_doc = acceptance.model_dump()
+            acc_doc["accepted_at"] = acc_doc["accepted_at"].isoformat()
+            await db.quest_acceptances.insert_one(acc_doc)
+            await db.quests.update_one({"id": existing["id"]}, {"$inc": {"current_acceptors": 1}})
+        return {"needs_character": False, "quest_id": existing["id"]}
+
+    nation = char.get("nation") or "Ammeonon"
+    cname = char.get("name") or "the newcomer"
+    race = char.get("race") or "adventurer"
+    cclass = char.get("character_class") or "wanderer"
+
+    description = (
+        f"A gentle beginning for {cname}, a {race} {cclass} newly arrived in {nation}. "
+        f"{cname} steps into the heart of a bustling settlement where a local figure has "
+        f"a small, welcoming task — the first thread of a much larger tapestry. Keep it "
+        f"low-stakes and newcomer-friendly: introduce the setting with warm sensory detail, "
+        f"one memorable but kindly NPC, and a simple, clear hook the newcomer can act on."
+    )
+
+    quest = Quest(
+        creator_id=current_user.id,
+        creator_username=current_user.username,
+        title=f"First Steps in {nation}",
+        description=description,
+        difficulty="easy",
+        reward_currency=100,
+        reward_xp=50,
+        nation=nation,
+        category="starter",
+        max_acceptors=1,
+        current_acceptors=1,
+    )
+    quest_doc = quest.model_dump()
+    quest_doc["created_at"] = quest_doc["created_at"].isoformat()
+    await db.quests.insert_one(quest_doc)
+
+    # Auto-accept the active character so the player can act immediately.
+    acceptance = QuestAcceptance(
+        quest_id=quest.id, user_id=current_user.id, character_id=char["id"]
+    )
+    acc_doc = acceptance.model_dump()
+    acc_doc["accepted_at"] = acc_doc["accepted_at"].isoformat()
+    await db.quest_acceptances.insert_one(acc_doc)
+
+    # AI Quest Master opening narration (turn 0), personalised via the description.
+    try:
+        opening = await quest_master.initialize_quest(quest_doc)
+    except Exception as e:
+        logger.error(f"starter-quest opening narration failed: {e}")
+        opening = (
+            f"The world of Delarom opens before {cname}. The air hums with possibility, and "
+            f"a friendly voice calls out from nearby — your first step awaits. What do you do?"
+        )
+    initial_action = QuestAction(
+        quest_id=quest.id, user_id="SYSTEM", character_id="QUEST_MASTER",
+        character_name="Quest Master", character_race="AI", character_class="Narrator",
+        action_text="[Quest Opening]", ai_response=opening, turn_number=0,
+    )
+    action_doc = initial_action.model_dump()
+    action_doc["created_at"] = action_doc["created_at"].isoformat()
+    await db.quest_actions.insert_one(action_doc)
+
+    return {"needs_character": False, "quest_id": quest.id}
+
+
 # ==================== NPC MEMORY & SCENE STATE ROUTES ====================
 
 @api_router.get("/locations/{nation}/{location}/scene-state")

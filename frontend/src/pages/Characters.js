@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useRef } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { getMyCharacters, createCharacter, updateCharacter, deleteCharacter, generateCharacterPortrait, uploadCharacterImage } from '../utils/api';
+import { useNavigate, useSearchParams } from 'react-router-dom';
+import { getMyCharacters, createCharacter, updateCharacter, deleteCharacter, generateCharacterPortrait, uploadCharacterImage, startStarterQuest } from '../utils/api';
 import { toast } from 'sonner';
 import AnimatedBackground from '../components/AnimatedBackground';
 import Navbar from '../components/Navbar';
@@ -23,6 +23,7 @@ import ApprenticeshipsPanel from '../components/ApprenticeshipsPanel';
 
 const Characters = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const fileInputRefs = useRef({});
   const [characters, setCharacters] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -55,6 +56,15 @@ const Characters = () => {
     fetchCharacters();
   }, []);
 
+  // First-quest handoff: arriving via ?starter=1 opens the create form
+  // straight away so a brand-new player can forge their hero without a click.
+  useEffect(() => {
+    if (searchParams.get('starter')) {
+      setIsEditMode(false);
+      setIsDialogOpen(true);
+    }
+  }, []);
+
   const fetchCharacters = async () => {
     try {
       const response = await getMyCharacters();
@@ -79,6 +89,22 @@ const Characters = () => {
       } else {
         await createCharacter(formData);
         toast.success(`${formData.name} has been created!`);
+        // First-quest handoff: a brand-new player who arrived via the welcome
+        // onboarding (?starter=1) is dropped straight into their starter scene.
+        if (characters.length === 0 && searchParams.get('starter')) {
+          const tid = toast.loading('The Quest Master is preparing your first scene...');
+          try {
+            const res = await startStarterQuest();
+            toast.dismiss(tid);
+            if (res.data?.quest_id) {
+              navigate(`/quests/${res.data.quest_id}/play`);
+              return;
+            }
+          } catch (_e) {
+            toast.dismiss(tid);
+            toast.error('Could not start your first quest — you can begin from the Quest Board.');
+          }
+        }
       }
       setIsDialogOpen(false);
       setIsEditMode(false);

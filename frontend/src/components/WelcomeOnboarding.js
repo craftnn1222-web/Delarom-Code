@@ -30,7 +30,7 @@ const swap = {
   transition: { duration: 0.28 },
 };
 
-const WelcomeOnboarding = ({ open, username, initialStep = 0, onClose, onStepChange }) => {
+const WelcomeOnboarding = ({ open, username, initialStep = 0, onClose, onStepChange, onFirstQuest }) => {
   const navigate = useNavigate();
   const [step, setStep] = useState(Math.min(Math.max(initialStep, 0), 3));
   const [peeked, setPeeked] = useState(null);
@@ -235,12 +235,16 @@ const WelcomeOnboarding = ({ open, username, initialStep = 0, onClose, onStepCha
                       })}
                     </div>
                     <Button
-                      onClick={() => finish()}
-                      className="w-full bg-gradient-to-r from-purple-600 to-pink-600 hover:from-purple-700 hover:to-pink-700"
-                      data-testid="welcome-cta-enter"
+                      onClick={() => onFirstQuest?.()}
+                      className="w-full bg-gradient-to-r from-amber-500 to-purple-600 hover:from-amber-600 hover:to-purple-700 text-base py-6"
+                      data-testid="welcome-cta-first-quest"
                     >
-                      Enter Delarom
+                      <Sword className="w-4 h-4 mr-2" />
+                      Begin Your First Quest
                     </Button>
+                    <p className="text-center text-[11px] text-gray-500 mt-2">
+                      The Quest Master will set the scene — no experience needed.
+                    </p>
                   </motion.div>
                 )}
               </AnimatePresence>
