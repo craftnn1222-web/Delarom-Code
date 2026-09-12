@@ -10,7 +10,7 @@ import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { Label } from './ui/label';
-import { Hammer, Plus, X, Award } from 'lucide-react';
+import { Hammer, Plus, X, Award, ChevronDown } from 'lucide-react';
 
 const RANK_TINT = {
   initiate:   'bg-stone-700/40 border-stone-500/40 text-stone-100',
@@ -25,6 +25,7 @@ const ApprenticeshipsPanel = ({ character }) => {
   const [ranks, setRanks] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showStart, setShowStart] = useState(false);
+  const [craftOpen, setCraftOpen] = useState(false);
   const [milestoneFor, setMilestoneFor] = useState(null);
   const [form, setForm] = useState({
     craft: 'smith',
@@ -153,7 +154,7 @@ const ApprenticeshipsPanel = ({ character }) => {
         <p className="text-sm text-gray-300">
           Long-term craft training under a master NPC.
         </p>
-        <Button size="sm" onClick={() => setShowStart(true)} className="bg-amber-700 hover:bg-amber-600" data-testid="apprenticeship-start-btn">
+        <Button size="sm" onClick={() => { setCraftOpen(false); setShowStart(true); }} className="bg-amber-700 hover:bg-amber-600" data-testid="apprenticeship-start-btn">
           <Plus className="w-4 h-4 mr-1" /> New
         </Button>
       </div>
@@ -243,18 +244,50 @@ const ApprenticeshipsPanel = ({ character }) => {
             <div className="space-y-3">
               <div>
                 <Label className="text-gray-300 text-xs">Craft</Label>
-                <select
-                  value={form.craft}
-                  onChange={(e) => setForm((f) => ({ ...f, craft: e.target.value, mentor: null, mentor_results: [], mentor_query: '' }))}
-                  className="mt-1 w-full bg-black/30 border border-amber-500/40 text-white capitalize rounded-md px-3 py-2"
-                  data-testid="apprenticeship-craft-select"
-                >
-                  {crafts.map((c) => (
-                    <option key={c} value={c} className="bg-black capitalize" data-testid={`apprenticeship-craft-option-${c}`}>
-                      {c}
-                    </option>
-                  ))}
-                </select>
+                {/* Custom click/pointer-driven dropdown (NOT a native <select>).
+                    A native <select> won't open on iOS Safari here: this modal
+                    is portaled to <body> while the parent Radix Dialog's
+                    react-remove-scroll blocks touch events outside its scroll
+                    container, swallowing the tap that opens the native picker.
+                    Button-based options use click events, which still fire. */}
+                <div className="relative mt-1">
+                  <button
+                    type="button"
+                    onClick={() => setCraftOpen((o) => !o)}
+                    className="w-full flex items-center justify-between bg-black/30 border border-amber-500/40 text-white capitalize rounded-md px-3 py-2"
+                    aria-haspopup="listbox"
+                    aria-expanded={craftOpen}
+                    data-testid="apprenticeship-craft-select"
+                  >
+                    <span>{form.craft}</span>
+                    <ChevronDown className={`w-4 h-4 text-amber-300 transition-transform ${craftOpen ? 'rotate-180' : ''}`} />
+                  </button>
+                  {craftOpen && (
+                    <ul
+                      className="absolute z-10 mt-1 w-full max-h-52 overflow-auto bg-gray-900 border border-amber-500/40 rounded-md shadow-xl"
+                      role="listbox"
+                      data-testid="apprenticeship-craft-options"
+                    >
+                      {crafts.map((c) => (
+                        <li key={c}>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setForm((f) => ({ ...f, craft: c, mentor: null, mentor_results: [], mentor_query: '' }));
+                              setCraftOpen(false);
+                            }}
+                            role="option"
+                            aria-selected={form.craft === c}
+                            className={`block w-full text-left px-3 py-2 capitalize ${form.craft === c ? 'bg-amber-700/40 text-amber-100' : 'text-gray-200 hover:bg-amber-600/30'}`}
+                            data-testid={`apprenticeship-craft-option-${c}`}
+                          >
+                            {c}
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
               </div>
               <div>
                 <Label className="text-gray-300 text-xs">Mentor (master of the chosen craft)</Label>
